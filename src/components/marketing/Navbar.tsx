@@ -34,6 +34,9 @@ export function Navbar() {
     setMobileOpen(false);
   }, [pathname]);
 
+  const isDarkHeaderPage = ["/", "/solutions", "/industries", "/case-studies"].includes(pathname);
+  const isTextLight = !scrolled && isDarkHeaderPage;
+
   return (
     <header
       className={cn(
@@ -47,30 +50,40 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-500 to-brand-700 flex items-center justify-center shadow-glow">
-              <Zap className="w-4 h-4 text-white" strokeWidth={2.5} />
+            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-slate-950/20 dark:bg-transparent">
+              <img src="/images/icon.png" alt="EPCX Logo" className="w-full h-full object-contain" />
             </div>
-            <span className="font-display font-700 text-lg tracking-tight text-slate-900 dark:text-white">
+            <span className={cn(
+              "font-display font-bold text-lg tracking-tight transition-colors duration-200",
+              isTextLight ? "text-white" : "text-slate-900 dark:text-white"
+            )}>
               EPCX<span className="text-accent-500">.cloud</span>
             </span>
           </Link>
 
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={cn(
-                  "px-3.5 py-2 rounded-lg text-sm font-medium transition-colors duration-200",
-                  pathname === link.href
-                    ? "text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-slate-800/70"
-                )}
-              >
-                {link.label}
-              </Link>
-            ))}
+            {navLinks.map((link) => {
+              const active = pathname === link.href;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    "px-3.5 py-2 rounded-lg text-sm font-medium transition-colors duration-200",
+                    active
+                      ? isTextLight
+                        ? "text-white bg-white/10"
+                        : "text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800"
+                      : isTextLight
+                        ? "text-slate-300 hover:text-white hover:bg-white/5"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-slate-800/70"
+                  )}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
           </div>
 
           {/* Desktop Actions */}
@@ -79,7 +92,12 @@ export function Navbar() {
             {mounted && (
               <button
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className={cn(
+                  "p-2 rounded-lg transition-colors",
+                  isTextLight
+                    ? "text-slate-300 hover:text-white hover:bg-white/5"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
+                )}
                 aria-label="Toggle theme"
               >
                 {theme === "dark" ? (
@@ -91,7 +109,12 @@ export function Navbar() {
             )}
             <Link
               href="/login"
-              className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+              className={cn(
+                "px-4 py-2 text-sm font-medium transition-colors",
+                isTextLight
+                  ? "text-slate-300 hover:text-white"
+                  : "text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+              )}
             >
               Login
             </Link>
@@ -108,7 +131,10 @@ export function Navbar() {
             {mounted && (
               <button
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                className="p-2 rounded-lg text-slate-500 dark:text-slate-400"
+                className={cn(
+                  "p-2 rounded-lg transition-colors",
+                  isTextLight ? "text-slate-300" : "text-slate-500 dark:text-slate-400"
+                )}
                 aria-label="Toggle theme"
               >
                 {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -116,7 +142,10 @@ export function Navbar() {
             )}
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
-              className="p-2 rounded-lg text-slate-700 dark:text-slate-300"
+              className={cn(
+                "p-2 rounded-lg transition-colors",
+                isTextLight ? "text-white" : "text-slate-700 dark:text-slate-300"
+              )}
               aria-label="Toggle menu"
             >
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}

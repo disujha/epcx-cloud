@@ -75,8 +75,8 @@ export default function RootLayout({
       className={`${inter.variable} ${interTight.variable}`}
     >
       <head>
-        <link rel="icon" href="/favicon.ico" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="icon" href="/favicon.png" />
+        <link rel="apple-touch-icon" href="/favicon.png" />
       </head>
       <body className="font-sans antialiased">
         <ThemeProvider
