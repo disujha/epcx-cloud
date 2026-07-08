@@ -1,0 +1,22 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "EPCX.cloud",
+        "supportEmail": "hello@epcx.cloud",
+        "authorizedRedirectUris": [
+          "https://epcx.cloud",
+          "http://localhost:3000"
+        ]
+      }
+    }
+  }
+}

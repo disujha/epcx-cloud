@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/organizations/$(orgId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/organizations/$(orgId)).data.memberIds;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+
+    // Organizations
+    match /organizations/{orgId} {
+      allow read: if isAuthenticated() && isOrgMember(orgId);
+      allow write: if isAuthenticated() &&
+        request.auth.uid in resource.data.adminIds;
+    }
+
+    // Projects
+    match /projects/{projectId} {
+      allow read: if isAuthenticated() &&
+        (request.auth.uid == resource.data.ownerId ||
+         isOrgMember(resource.data.organizationId));
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() &&
+        request.auth.uid == resource.data.ownerId;
+    }
+
+    // Documents
+    match /documents/{docId} {
+      allow read: if isAuthenticated() &&
+        (request.auth.uid == resource.data.uploadedBy ||
+         isOrgMember(resource.data.organizationId));
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() &&
+        request.auth.uid == resource.data.uploadedBy;
+    }
+
+    // Reviews
+    match /reviews/{reviewId} {
+      allow read: if isAuthenticated() &&
+        (request.auth.uid == resource.data.userId ||
+         isOrgMember(resource.data.organizationId));
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() &&
+        request.auth.uid == resource.data.userId;
+      allow delete: if isAuthenticated() &&
+        request.auth.uid == resource.data.userId;
+    }
+
+    // Settings
+    match /settings/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}

@@ -1,36 +1,152 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# EPCX.cloud
+
+> **AI Decision Intelligence for EPC Contractors**  
+> Helping engineering teams make faster, safer and more informed decisions using AI.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16.2.10 (App Router) |
+| Language | TypeScript |
+| Styling | Tailwind CSS v4 |
+| Animations | Framer Motion |
+| Auth | Firebase Authentication |
+| Database | Firebase Firestore |
+| Storage | Firebase Storage |
+| AI Layer | Provider-agnostic adapter (mock, OpenAI, Claude, Gemini, local) |
+| Deployment | Vercel (configured, not yet deployed) |
+
+---
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Configure environment variables
+
+Copy `.env.local.example` to `.env.local` and fill in your Firebase credentials:
+
+```bash
+cp .env.local.example .env.local
+```
+
+The `.env.local` file is already pre-configured for the `epcxsite` Firebase project.
+
+### 3. Run locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Project Structure
 
-## Learn More
+```
+src/
+├── app/
+│   ├── (auth)/           # Login, Register pages
+│   ├── (dashboard)/      # Protected dashboard pages
+│   ├── (marketing)/      # Public marketing pages
+│   ├── layout.tsx        # Root layout with providers
+│   ├── sitemap.ts        # SEO sitemap
+│   └── robots.ts         # robots.txt
+├── components/
+│   ├── marketing/        # All marketing page components
+│   ├── dashboard/        # Dashboard UI components
+│   └── providers/        # ThemeProvider, etc.
+├── contexts/
+│   └── AuthContext.tsx   # Firebase auth state
+├── lib/
+│   ├── firebase/         # Firebase config, auth, firestore, storage
+│   ├── ai/               # Provider-agnostic AI adapter
+│   │   ├── types.ts      # Shared interfaces
+│   │   ├── mock-provider.ts  # Demo AI (no API key needed)
+│   │   └── index.ts      # Factory — swap providers here
+│   ├── fonts.ts          # Inter font config
+│   └── utils.ts          # Utility functions
+├── types/
+│   └── firebase.ts       # TypeScript interfaces for all Firestore collections
+└── middleware.ts          # Route protection (renamed to proxy.ts for Next.js 16)
+```
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Firebase Collections
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Collection | Description |
+|-----------|-------------|
+| `users` | User profiles linked to Firebase Auth UID |
+| `organizations` | Team/company accounts with member lists |
+| `projects` | Engineering projects grouping documents |
+| `documents` | Document metadata (file stored in Storage) |
+| `reviews` | AI review sessions and message history |
+| `settings` | Per-user preferences |
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Connecting a Real AI Provider
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The AI layer is fully provider-agnostic. To connect a real provider, edit `src/lib/ai/index.ts`:
+
+```typescript
+case "openai":
+  // Install: npm install openai
+  // Set env: OPENAI_API_KEY=sk-...
+  return new OpenAIProvider({ model: "gpt-4o" });
+
+case "claude":
+  // Install: npm install @anthropic-ai/sdk
+  // Set env: ANTHROPIC_API_KEY=sk-ant-...
+  return new ClaudeProvider({ model: "claude-3-5-sonnet-20241022" });
+
+case "gemini":
+  // Install: npm install @google/generative-ai
+  // Set env: GEMINI_API_KEY=...
+  return new GeminiProvider({ model: "gemini-2.0-flash" });
+
+case "local":
+  // Point to Ollama or LM Studio endpoint
+  return new LocalProvider({ endpoint: "http://localhost:11434" });
+```
+
+---
+
+## Firebase Setup
+
+Security rules are in:
+- `firestore.rules` — Firestore access rules
+- `storage.rules` — Storage upload/download rules
+- `firestore.indexes.json` — Composite indexes
+
+To deploy rules:
+```bash
+npx -y firebase-tools@latest use epcxsite
+npx -y firebase-tools@latest deploy --only firestore:rules,storage
+```
+
+---
+
+## Deployment (Vercel)
+
+```bash
+npx vercel
+```
+
+Set the following environment variables in the Vercel dashboard:
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+- `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`
