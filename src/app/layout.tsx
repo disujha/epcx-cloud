@@ -1,28 +1,29 @@
 import type { Metadata } from "next";
-import { inter, interTight } from "@/lib/fonts";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import "./globals.css";
+import "./field-records.css";
+import "./field-records-nav.css";
+import "./field-record-manager.css";
+import "./field-record-manager-overrides.css";
+import "./marketing-home-refine.css";
+import "./field-app-shell.css";
+import "./public-home.css";
+import "./field-workspace-home.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://epcx.cloud"),
   title: {
-    default: "EPCX.cloud — AI Decision Intelligence for EPC Contractors",
+    default: "EPCX Cloud | EPC document workflows",
     template: "%s | EPCX.cloud",
   },
-  description:
-    "Helping engineering teams make faster, safer and more informed decisions using AI. Review documents, compare specifications, identify risks and automate engineering workflows.",
+  description: "EPCX BillCheck helps organization members compare RA progress against work orders and review quantity checks.",
   keywords: [
-    "EPC AI",
-    "engineering AI",
-    "document review",
-    "specification comparison",
-    "engineering decision intelligence",
+    "EPC work orders",
+    "RA bill checking",
+    "BOQ reconciliation",
     "EPC contractor software",
-    "engineering document management",
-    "AI for oil and gas",
-    "petrochemical AI",
-    "refinery software",
+    "BillCheck",
   ],
   authors: [{ name: "EPCX.cloud" }],
   creator: "EPCX.cloud",
@@ -31,23 +32,21 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: "https://epcx.cloud",
     siteName: "EPCX.cloud",
-    title: "EPCX.cloud — AI Decision Intelligence for EPC Contractors",
-    description:
-      "Helping engineering teams make faster, safer and more informed decisions using AI.",
+    title: "EPCX Cloud | EPC document workflows",
+    description: "EPCX BillCheck helps organization members compare RA progress against work orders and review quantity checks.",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "EPCX.cloud — Engineering AI Platform",
+        alt: "EPCX Cloud EPC workflows",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "EPCX.cloud — AI Decision Intelligence for EPC Contractors",
-    description:
-      "Helping engineering teams make faster, safer and more informed decisions using AI.",
+    title: "EPCX Cloud | EPC document workflows",
+    description: "EPCX BillCheck helps organization members compare RA progress against work orders and review quantity checks.",
     images: ["/og-image.png"],
   },
   robots: {
@@ -72,7 +71,6 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${interTight.variable}`}
     >
       <head>
         <link rel="icon" href="/favicon.png" />

@@ -43,7 +43,7 @@ export default function ContactPage() {
           {/* Contact info */}
           <div className="md:col-span-2 space-y-6">
             {[
-              { icon: Mail, label: "Email", value: "hello@epcx.cloud", href: "mailto:hello@epcx.cloud" },
+              { icon: Mail, label: "Email", value: "support@epcx.cloud", href: "mailto:support@epcx.cloud" },
               { icon: Phone, label: "Phone", value: "Available upon request", href: "#" },
               { icon: MapPin, label: "Headquarters", value: "Engineering teams worldwide", href: "#" },
             ].map((item) => (
@@ -77,7 +77,7 @@ export default function ContactPage() {
                 </div>
                 <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Message sent!</h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  We'll get back to you within one business day.
+                  We&apos;ll get back to you within one business day.
                 </p>
               </div>
             ) : (

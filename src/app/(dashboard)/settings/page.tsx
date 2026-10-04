@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { motion } from "framer-motion";
-import { Bell, Shield, Palette, Globe } from "lucide-react";
+import { Bell, Shield, Palette } from "lucide-react";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -62,27 +62,6 @@ export default function SettingsPage() {
           <div className="text-xs text-slate-400">
             Last sign-in: {user?.metadata?.lastSignInTime ?? "Unknown"}
           </div>
-        </div>
-      ),
-    },
-    {
-      icon: Globe,
-      title: "AI Provider",
-      desc: "Configure which AI model powers your reviews.",
-      children: (
-        <div className="py-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-slate-900 dark:text-white">Active Provider</div>
-              <div className="text-xs text-slate-400">Currently using demo mode</div>
-            </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-accent-500/10 text-accent-500">
-              Demo
-            </span>
-          </div>
-          <p className="text-xs text-slate-400 mt-3">
-            Connect OpenAI, Claude, Gemini, or a private model under Enterprise plan.
-          </p>
         </div>
       ),
     },

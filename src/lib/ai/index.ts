@@ -1,5 +1,6 @@
 import type { AIProvider, AIProviderName } from "./types";
 import { mockProvider } from "./mock-provider";
+import { geminiProvider } from "./firebase-provider";
 
 /**
  * Factory function that returns the appropriate AI provider.
@@ -8,10 +9,10 @@ import { mockProvider } from "./mock-provider";
  * Future integrations:
  *   - openai: Use openai npm package with OPENAI_API_KEY
  *   - claude: Use @anthropic-ai/sdk with ANTHROPIC_API_KEY
- *   - gemini: Use @google/generative-ai with GEMINI_API_KEY
+ *   - gemini: Firebase callable backed by the server-side budgeted trial function
  *   - local: Point to a local Ollama/LM Studio endpoint
  */
-export function getAIProvider(provider: AIProviderName = "mock"): AIProvider {
+export function getAIProvider(provider: AIProviderName): AIProvider {
   switch (provider) {
     case "mock":
       return mockProvider;
@@ -22,12 +23,12 @@ export function getAIProvider(provider: AIProviderName = "mock"): AIProvider {
     case "claude":
       throw new Error("Claude provider not yet configured. Set ANTHROPIC_API_KEY.");
     case "gemini":
-      throw new Error("Gemini provider not yet configured. Set GEMINI_API_KEY.");
+      return geminiProvider;
     case "local":
       throw new Error("Local provider not yet configured. Set LOCAL_AI_ENDPOINT.");
 
     default:
-      return mockProvider;
+      throw new Error("No supported AI provider was selected.");
   }
 }
 

@@ -25,9 +25,170 @@ export interface Organization {
   plan: "starter" | "professional" | "enterprise";
   memberIds: string[];
   adminIds: string[];
+  /** BillCheck editors are assigned by organization admins. Members not listed here are read-only. */
+  billCheckEditorIds?: string[];
+  /** Members allowed to create/edit Field Progress projects and append events. */
+  fieldProgressEditorIds?: string[];
   settings: OrganizationSettings;
   createdAt: FirestoreTimestamp;
   updatedAt: FirestoreTimestamp;
+}
+
+export type BillCheckStatus =
+  | "DRAFT"
+  | "CHECKING"
+  | "NEEDS_REVIEW"
+  | "READY_TO_SUBMIT"
+  | "SUBMITTED"
+  | "CERTIFIED";
+
+export type BillCheckMatchStatus = "MATCHED" | "PROBABLE_MATCH" | "UNMATCHED";
+
+export interface BillCheckSource {
+  fileName: string;
+  storagePath: string;
+  importBatchId: string;
+  importedBy: string;
+  importedAt: FirestoreTimestamp;
+}
+
+export interface BillCheckWorkOrder {
+  id: string;
+  organizationId: string;
+  workOrderNumber: string;
+  clientName: string;
+  projectName: string;
+  currency: string;
+  date?: string;
+  totalContractValue?: number;
+  sourceFiles: BillCheckSource[];
+  createdBy: string;
+  createdAt: FirestoreTimestamp;
+  updatedAt: FirestoreTimestamp;
+}
+
+export interface BillCheckContractItem {
+  id: string;
+  organizationId: string;
+  contractId: string;
+  itemCode: string;
+  description: string;
+  unit: string;
+  contractQuantity: number;
+  rate: number;
+  contractAmount?: number;
+  createdAt: FirestoreTimestamp;
+  updatedAt: FirestoreTimestamp;
+  source?: BillCheckImportTrace;
+}
+
+export interface BillCheckLine {
+  id: string;
+  organizationId: string;
+  contractId: string;
+  originalLineNumber: string;
+  normalizedLineNumber: string;
+  normalizationVersion: string;
+  description?: string;
+  unit?: string;
+  quantity?: number;
+  identifiers?: Record<string, string>;
+  source?: BillCheckImportTrace;
+  createdAt: FirestoreTimestamp;
+  updatedAt: FirestoreTimestamp;
+}
+
+export interface BillCheckAlias {
+  id: string;
+  organizationId: string;
+  contractId: string;
+  aliasValue: string;
+  normalizedAlias: string;
+  canonicalLineId: string;
+  canonicalLineNumber: string;
+  confirmedBy: string;
+  createdBy: string;
+  createdAt: FirestoreTimestamp;
+}
+
+export interface BillCheckImportTrace {
+  sourceFile: string;
+  sourceRow: number;
+  sourceColumns: Record<string, string>;
+  importBatchId: string;
+  importedBy: string;
+  importedAt: FirestoreTimestamp;
+}
+
+export interface BillCheckImportBatch {
+  id: string;
+  organizationId: string;
+  contractId: string;
+  raCycleId?: string;
+  kind: "work_order" | "client_lines" | "opening_balance" | "previous_ra" | "current_progress";
+  fileName: string;
+  storagePath: string;
+  importedBy: string;
+  importedAt: FirestoreTimestamp;
+  rowCount: number;
+  mapping: Record<string, string>;
+}
+
+export interface BillCheckRACycle {
+  id: string;
+  organizationId: string;
+  contractId: string;
+  raNumber: string;
+  period: string;
+  status: BillCheckStatus;
+  sourceFiles: BillCheckSource[];
+  createdBy: string;
+  createdAt: FirestoreTimestamp;
+  updatedAt: FirestoreTimestamp;
+  reconciliation?: {
+    processed: number;
+    ready: number;
+    needsReview: number;
+    blocked: number;
+    checkedAt: FirestoreTimestamp;
+  };
+}
+
+export interface BillCheckBillingRecord {
+  id: string;
+  organizationId: string;
+  contractId: string;
+  raCycleId?: string;
+  raNumber?: string;
+  recordType: "opening_balance" | "claim" | "certification";
+  lineNumber: string;
+  normalizedLineNumber: string;
+  canonicalLineId?: string;
+  itemCode?: string;
+  contractItemId?: string;
+  description?: string;
+  stage?: string;
+  spool?: string;
+  claimedQuantity?: number;
+  certifiedQuantity?: number;
+  amount?: number;
+  sourceAmount?: number;
+  source?: BillCheckImportTrace;
+  createdBy: string;
+  createdAt: FirestoreTimestamp;
+  updatedAt: FirestoreTimestamp;
+  matchStatus?: BillCheckMatchStatus;
+  issueCodes?: Array<"PROBABLE_MATCH" | "UNMATCHED" | "DUPLICATE" | "OVER_CLAIM">;
+  duplicateOf?: string;
+  userConfirmedMatch?: boolean;
+  duplicateReviewed?: boolean;
+  checkSnapshot?: {
+    previousClaimedQuantity: number;
+    previousCertifiedQuantity: number;
+    newClaimedCumulative: number;
+    allowableQuantity: number | null;
+    overClaimQuantity: number;
+  };
 }
 
 export interface OrganizationSettings {

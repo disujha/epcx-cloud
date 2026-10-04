@@ -1,32 +1,29 @@
 import type { Metadata } from "next";
-import { CaseStudySection } from "@/components/marketing/CaseStudySection";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Case Studies — EPCX.cloud in Action",
-  description:
-    "See how EPC teams use EPCX.cloud to improve document control, accelerate engineering reviews, and gain project visibility.",
+  title: "EPC Case Studies — EPCX Cloud",
+  description: "Customer-approved EPCX Cloud case studies will be published here.",
 };
 
 export default function CaseStudiesPage() {
   return (
-    <div className="pt-16">
-      <div className="bg-brand-950 py-20 px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-slate-400 mb-4">
-            <span className="w-6 h-px bg-slate-700" />
-            Case Studies
-            <span className="w-6 h-px bg-slate-700" />
-          </div>
-          <h1 className="font-display text-5xl sm:text-6xl font-bold text-white leading-tight tracking-tight mb-5">
-            Real Projects. Real Results.
-          </h1>
-          <p className="text-xl text-slate-400 leading-relaxed max-w-2xl mx-auto">
-            Engineering teams across refinery, power and infrastructure projects
-            are using EPCX.cloud to work smarter and faster.
-          </p>
-        </div>
+    <section className="bg-slate-50 px-4 pb-20 pt-28 text-slate-900 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm sm:p-12">
+        <p className="text-xs font-bold uppercase tracking-[0.16em] text-accent-700">Case studies</p>
+        <h1 className="mt-3 font-display text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+          EPC project stories are coming soon
+        </h1>
+        <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
+          We’ll share customer-approved workflows and results here when they are ready to publish.
+        </p>
+        <Link
+          href="/"
+          className="mt-7 inline-flex min-h-11 items-center justify-center rounded-xl bg-accent-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-accent-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2 motion-reduce:transition-none"
+        >
+          Choose an EPC task
+        </Link>
       </div>
-      <CaseStudySection />
-    </div>
+    </section>
   );
 }

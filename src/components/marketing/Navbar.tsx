@@ -1,48 +1,55 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Image from "next/image";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Moon, Sun, Zap } from "lucide-react";
-import { useTheme } from "next-themes";
+import { Menu, X, LogOut, UserRound, BriefcaseBusiness, ChevronDown, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navLinks = [
-  { href: "/solutions", label: "Solutions" },
-  { href: "/industries", label: "Industries" },
-  { href: "/case-studies", label: "Case Studies" },
-  { href: "/pricing", label: "Pricing" },
+  { href: "/#product", label: "Product" },
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/#field-teams", label: "For Teams" },
+  { href: "/#examples", label: "Examples" },
   { href: "/contact", label: "Contact" },
 ];
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const pathname = usePathname();
-  const { theme, setTheme } = useTheme();
+  const router = useRouter();
+  const { user, loading, logout } = useAuth();
+  const accountUser = user && !user.isAnonymous ? user : null;
+
+  async function signOutToHome() {
+    await logout();
+    setAccountMenuOpen(false);
+    setMobileOpen(false);
+    router.push("/");
+  }
 
   useEffect(() => {
-    setMounted(true);
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
-
-  const isDarkHeaderPage = ["/", "/solutions", "/industries", "/case-studies"].includes(pathname);
+  const isLightHome = pathname === "/";
+  const isDarkHeaderPage = ["/solutions", "/industries", "/case-studies"].includes(pathname);
   const isTextLight = !scrolled && isDarkHeaderPage;
 
   return (
     <header
       className={cn(
-        "fixed top-0 left-0 right-0 z-50 transition-all duration-300",
+        "fixed top-0 left-0 right-0 z-50 transition-all duration-300 motion-reduce:transition-none",
         scrolled
-          ? "bg-white/90 dark:bg-brand-950/90 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50 shadow-sm"
+          ? isLightHome
+            ? "bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm"
+            : "bg-white/90 dark:bg-brand-950/90 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50 shadow-sm"
           : "bg-transparent"
       )}
     >
@@ -50,19 +57,19 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center bg-slate-950/20 dark:bg-transparent">
-              <img src="/images/icon.png" alt="EPCX Logo" className="w-full h-full object-contain" />
+            <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
+              <Image src="/images/icon.png" alt="EPCX Logo" width={32} height={32} className="h-full w-full object-contain" />
             </div>
             <span className={cn(
               "font-display font-bold text-lg tracking-tight transition-colors duration-200",
-              isTextLight ? "text-white" : "text-slate-900 dark:text-white"
+              isTextLight ? "text-white" : isLightHome ? "text-slate-900" : "text-slate-900 dark:text-white"
             )}>
               EPCX<span className="text-accent-500">.cloud</span>
             </span>
           </Link>
 
           {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-1">
             {navLinks.map((link) => {
               const active = pathname === link.href;
               return (
@@ -70,13 +77,15 @@ export function Navbar() {
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    "px-3.5 py-2 rounded-lg text-sm font-medium transition-colors duration-200",
+                    "px-2.5 py-2 rounded-lg text-xs font-medium transition-colors duration-200 lg:text-sm",
                     active
                       ? isTextLight
                         ? "text-white bg-white/10"
                         : "text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800"
                       : isTextLight
                         ? "text-slate-300 hover:text-white hover:bg-white/5"
+                      : isLightHome
+                        ? "text-slate-600 hover:text-slate-900 hover:bg-slate-100/70"
                         : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-slate-800/70"
                   )}
                 >
@@ -87,64 +96,39 @@ export function Navbar() {
           </div>
 
           {/* Desktop Actions */}
-          <div className="hidden md:flex items-center gap-3">
-            {/* Theme toggle */}
-            {mounted && (
-              <button
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                className={cn(
-                  "p-2 rounded-lg transition-colors",
-                  isTextLight
-                    ? "text-slate-300 hover:text-white hover:bg-white/5"
-                    : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
-                )}
-                aria-label="Toggle theme"
+          <div className="hidden lg:flex items-center gap-3">
+            {accountUser ? (
+              <div
+                className="public-account-wrap"
+                onMouseEnter={() => setAccountMenuOpen(true)}
+                onMouseLeave={() => setAccountMenuOpen(false)}
+                onFocus={() => setAccountMenuOpen(true)}
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setAccountMenuOpen(false);
+                }}
               >
-                {theme === "dark" ? (
-                  <Sun className="w-4 h-4" />
-                ) : (
-                  <Moon className="w-4 h-4" />
-                )}
-              </button>
-            )}
-            <Link
-              href="/login"
-              className={cn(
-                "px-4 py-2 text-sm font-medium transition-colors",
-                isTextLight
-                  ? "text-slate-300 hover:text-white"
-                  : "text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
-              )}
-            >
-              Login
-            </Link>
-            <Link
-              href="/register"
-              className="px-4 py-2 text-sm font-semibold text-white bg-accent-500 hover:bg-accent-600 rounded-lg transition-all duration-200 shadow-sm hover:shadow-glow"
-            >
-              Get Started
-            </Link>
+                <button className="navbar-account" onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} aria-haspopup="menu" aria-label={`Account menu for ${accountUser.displayName || accountUser.email}`}>
+                  <span className="navbar-account-avatar">{(accountUser.displayName || accountUser.email || "E").slice(0, 1).toUpperCase()}</span>
+                  <span className="navbar-account-name">{accountUser.displayName || accountUser.email}</span>
+                  <ChevronDown size={14} className="navbar-account-chevron"/>
+                </button>
+                {accountMenuOpen && <div className="public-account-menu" role="menu">
+                  <div className="public-account-menu-head"><span className="public-account-menu-kicker">SIGNED IN</span><b>{accountUser.displayName || accountUser.email}</b><small>{accountUser.email}</small></div>
+                  <Link role="menuitem" href="/start" onClick={() => setAccountMenuOpen(false)}><BriefcaseBusiness size={16}/><span><b>Open workspace</b><small>Continue to your field records</small></span><ArrowUpRight size={14} className="public-account-menu-end"/></Link>
+                  <Link role="menuitem" href="/start?view=profile" onClick={() => setAccountMenuOpen(false)}><UserRound size={16}/><span><b>Profile</b><small>Account details</small></span></Link>
+                  <button role="menuitem" onClick={() => void signOutToHome()}><LogOut size={16}/><span><b>Sign out</b><small>Return to the EPCX home page</small></span></button>
+                </div>}
+              </div>
+            ) : !loading && <><Link href="/login?redirect=%2Fstart" className="navbar-signin">Sign in</Link><Link href="/login?redirect=%2Fstart" className="navbar-workspace-cta">Open workspace<ArrowUpRight size={15}/></Link></>}
           </div>
 
           {/* Mobile toggle */}
-          <div className="flex md:hidden items-center gap-2">
-            {mounted && (
-              <button
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                className={cn(
-                  "p-2 rounded-lg transition-colors",
-                  isTextLight ? "text-slate-300" : "text-slate-500 dark:text-slate-400"
-                )}
-                aria-label="Toggle theme"
-              >
-                {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-              </button>
-            )}
+          <div className="flex lg:hidden items-center gap-2">
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className={cn(
                 "p-2 rounded-lg transition-colors",
-                isTextLight ? "text-white" : "text-slate-700 dark:text-slate-300"
+                isTextLight ? "text-white" : isLightHome ? "text-slate-700" : "text-slate-700 dark:text-slate-300"
               )}
               aria-label="Toggle menu"
             >
@@ -155,48 +139,30 @@ export function Navbar() {
       </nav>
 
       {/* Mobile Menu */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2 }}
-            className="md:hidden overflow-hidden bg-white dark:bg-brand-950 border-b border-slate-200 dark:border-slate-800"
+      {mobileOpen && (
+          <div
+            className={`lg:hidden overflow-hidden border-b ${isLightHome ? "bg-white border-slate-200" : "bg-white dark:bg-brand-950 border-slate-200 dark:border-slate-800"}`}
           >
             <div className="px-4 py-4 space-y-1">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
+                  onClick={() => setMobileOpen(false)}
                   className={cn(
                     "block px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                     pathname === link.href
                       ? "text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800"
-                      : "text-slate-600 dark:text-slate-400"
+                      : isLightHome ? "text-slate-600" : "text-slate-600 dark:text-slate-400"
                   )}
                 >
                   {link.label}
                 </Link>
               ))}
-              <div className="pt-3 pb-1 flex flex-col gap-2">
-                <Link
-                  href="/login"
-                  className="block px-3 py-2.5 rounded-lg text-sm font-medium text-center text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
-                >
-                  Login
-                </Link>
-                <Link
-                  href="/register"
-                  className="block px-3 py-2.5 rounded-lg text-sm font-semibold text-center text-white bg-accent-500 hover:bg-accent-600"
-                >
-                  Get Started
-                </Link>
-              </div>
+              <div className="pt-3 pb-1">{accountUser ? <><div className="mobile-nav-account"><span className="navbar-account-avatar">{(accountUser.displayName || accountUser.email || "E").slice(0, 1).toUpperCase()}</span><span>{accountUser.displayName || accountUser.email}</span></div><div className="mobile-public-actions"><Link href="/start" onClick={() => setMobileOpen(false)} className="navbar-workspace-cta">Open workspace</Link><button onClick={()=>void signOutToHome()}><LogOut size={15}/>Sign out</button></div></> : !loading && <div className="mobile-public-actions"><Link href="/login?redirect=%2Fstart" onClick={() => setMobileOpen(false)}>Sign in</Link><Link href="/login?redirect=%2Fstart" onClick={() => setMobileOpen(false)} className="navbar-workspace-cta">Open workspace</Link></div>}</div>
             </div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
     </header>
   );
 }

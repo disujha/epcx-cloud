@@ -27,6 +27,7 @@ export interface AIResponse {
     totalTokens: number;
   };
   finishReason?: "stop" | "length" | "error";
+  trialUsesRemaining?: number;
 }
 
 export interface AIStreamChunk {

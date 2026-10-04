@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { getSafePostAuthPath } from "@/lib/auth-redirect";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,7 +25,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signIn(email, password);
-      router.push("/dashboard");
+      router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Invalid credentials";
       setError(
@@ -44,7 +45,7 @@ export default function LoginPage() {
     setGoogleLoading(true);
     try {
       await signInGoogle();
-      router.push("/dashboard");
+      router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
     } catch {
       setError("Google sign-in failed. Please try again.");
     } finally {
@@ -63,7 +64,7 @@ export default function LoginPage() {
           Welcome back
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Sign in to your EPCX.cloud account
+          Sign in to EPCX Cloud
         </p>
       </div>
 
@@ -153,7 +154,7 @@ export default function LoginPage() {
       </form>
 
       <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
-        Don't have an account?{" "}
+        Don&apos;t have an account?{" "}
         <Link href="/register" className="font-semibold text-accent-500 hover:text-accent-600 transition-colors">
           Create account
         </Link>

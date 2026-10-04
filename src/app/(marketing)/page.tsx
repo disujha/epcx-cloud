@@ -1,32 +1,17 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { HeroSection } from "@/components/marketing/HeroSection";
-import { ProblemSection } from "@/components/marketing/ProblemSection";
-import { DemoSection } from "@/components/marketing/DemoSection";
-import { HowItWorksSection } from "@/components/marketing/HowItWorksSection";
-import { SolutionSection } from "@/components/marketing/SolutionSection";
-import { IndustriesSection } from "@/components/marketing/IndustriesSection";
-import { CaseStudySection } from "@/components/marketing/CaseStudySection";
-import { PricingSection } from "@/components/marketing/PricingSection";
-import { FaqSection } from "@/components/marketing/FaqSection";
+import { WorkspaceSupportSections } from "@/components/marketing/WorkspaceSupportSections";
+import { PublicScrollMotion } from "@/components/marketing/PublicScrollMotion";
 
 export const metadata: Metadata = {
-  title: "EPCX.cloud — Engineering Document Verification for EPC Contractors",
-  description:
-    "Helping engineering teams make faster, safer and more informed decisions. Review specifications, compare drawing revisions, identify compliance risks and automate technical verification workflows.",
+  title: "EPCX.cloud | Field records for EPC and industrial sites",
+  description: "Capture site work from the drawings and daily reports teams already use. Connect drawings, DPRs, toolbox talks and photos in one EPCX field workspace.",
 };
 
 export default function HomePage() {
-  return (
-    <>
-      <HeroSection />
-      <ProblemSection />
-      <DemoSection />
-      <HowItWorksSection />
-      <SolutionSection />
-      <IndustriesSection />
-      <CaseStudySection />
-      <PricingSection />
-      <FaqSection />
-    </>
-  );
+  return <div className="landing-page">
+    <PublicScrollMotion />
+    <HeroSection />
+    <WorkspaceSupportSections />
+  </div>;
 }

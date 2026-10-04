@@ -1,4 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, type AppCheck } from "firebase/app-check";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
@@ -15,6 +16,12 @@ const firebaseConfig = {
 
 // Avoid re-initializing during hot reload
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
+const siteKey = process.env.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY;
+const appCheckGlobal = globalThis as typeof globalThis & { __epcxAppCheck?: AppCheck };
+export const appCheck = typeof window !== "undefined" && siteKey
+  ? (appCheckGlobal.__epcxAppCheck ??= initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(siteKey), isTokenAutoRefreshEnabled: true }))
+  : undefined;
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);

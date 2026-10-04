@@ -4,9 +4,10 @@ import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { motion } from "framer-motion";
-import { Upload, FileText, X, CheckCircle, AlertCircle, ArrowLeft } from "lucide-react";
+import { Upload, FileText, X, CheckCircle, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { cn, formatBytes } from "@/lib/utils";
+import { uploadDocument } from "@/lib/firebase/storage";
 
 export default function UploadPage() {
   const { user } = useAuth();
@@ -16,12 +17,24 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback((incoming: FileList | null) => {
     if (!incoming) return;
-    const pdfs = Array.from(incoming).filter((f) => f.type === "application/pdf" || f.name.endsWith(".pdf"));
-    setFiles((prev) => [...prev, ...pdfs]);
+    setError("");
+    const selected = Array.from(incoming);
+    const invalid = selected.find((file) => file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf"));
+    if (invalid) {
+      setError(`${invalid.name} is not a PDF. This workspace upload accepts PDF files only.`);
+      return;
+    }
+    const oversized = selected.find((file) => file.size >= 50 * 1024 * 1024);
+    if (oversized) {
+      setError(`${oversized.name} is 50 MB or larger. Choose a PDF under 50 MB.`);
+      return;
+    }
+    setFiles((prev) => [...prev, ...selected]);
   }, []);
 
   function remove(name: string) {
@@ -32,17 +45,20 @@ export default function UploadPage() {
     if (!files.length || !user) return;
     setUploading(true);
 
-    // Simulate upload progress for each file
-    for (const file of files) {
-      for (let p = 0; p <= 100; p += 10) {
-        await new Promise((r) => setTimeout(r, 60));
-        setProgress((prev) => ({ ...prev, [file.name]: p }));
+    setError("");
+    try {
+      for (const file of files) {
+        await uploadDocument(file, user.uid, null, ({ progress: value }) => {
+          setProgress((prev) => ({ ...prev, [file.name]: value }));
+        });
       }
+      setDone(true);
+      setTimeout(() => router.push("/documents"), 1200);
+    } catch {
+      setError("One or more files could not be uploaded. Successfully uploaded files remain in your workspace.");
+    } finally {
+      setUploading(false);
     }
-
-    setDone(true);
-    setUploading(false);
-    setTimeout(() => router.push("/documents"), 1500);
   }
 
   return (
@@ -53,7 +69,8 @@ export default function UploadPage() {
           Back to Documents
         </Link>
         <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-white">Upload Documents</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Upload PDF engineering documents to your workspace.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Store PDF files in your private account folder. This upload does not analyze or extract the document.</p>
+        <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">PDF files up to 50 MB. Files stay in your private account folder until you delete them.</p>
       </motion.div>
 
       {/* Dropzone */}
@@ -118,6 +135,8 @@ export default function UploadPage() {
           })}
         </div>
       )}
+
+      {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">{error}</p>}
 
       {done && (
         <div className="flex items-center gap-3 p-4 rounded-xl bg-accent-500/10 border border-accent-500/20">

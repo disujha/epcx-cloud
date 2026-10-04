@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Mail, Lock, User } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { getSafePostAuthPath } from "@/lib/auth-redirect";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -29,7 +30,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(email, password, name);
-      router.push("/dashboard");
+      router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "";
       setError(
@@ -47,7 +48,7 @@ export default function RegisterPage() {
     setGoogleLoading(true);
     try {
       await signInGoogle();
-      router.push("/dashboard");
+      router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
     } catch {
       setError("Google sign-in failed. Please try again.");
     } finally {
@@ -66,8 +67,7 @@ export default function RegisterPage() {
           Create your account
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Start your free trial — no credit card required
-        </p>
+          Create a free EPCX Cloud account. BillCheck requires an existing organization; ask its admin to add you. No payment details are collected at sign-up.</p>
       </div>
 
       <button
@@ -169,7 +169,7 @@ export default function RegisterPage() {
       <p className="mt-3 text-center text-sm text-slate-500 dark:text-slate-400">
         Already have an account?{" "}
         <Link href="/login" className="font-semibold text-accent-500 hover:text-accent-600">
-          Sign in
+          Sign in to EPCX Cloud
         </Link>
       </p>
     </motion.div>

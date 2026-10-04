@@ -1,152 +1,71 @@
 "use client";
 
-import { useState } from "react";
-import { motion } from "framer-motion";
-import { FileText, Upload, Search, CheckCircle2, Clock, AlertCircle, Filter } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
-
-type DocumentStatus = "uploaded" | "processing" | "completed" | "reviewed" | "error";
-
-interface MockDocument {
-  id: string;
-  name: string;
-  status: DocumentStatus;
-  size: string;
-  date: string;
-  project?: string;
-}
-
-const MOCK_DOCS: MockDocument[] = [
-  { id: "1", name: "PIPING-SPEC-10A-REV-C.pdf", status: "completed", size: "2.4 MB", date: "Today, 10:32 AM", project: "Refinery TAR 2024" },
-  { id: "2", name: "VENDOR-QUOTE-PMP-001.pdf", status: "processing", size: "1.1 MB", date: "Today, 09:15 AM", project: "Pump Skid Package" },
-  { id: "3", name: "ELECTRICAL-SPEC-IS-400.pdf", status: "uploaded", size: "890 KB", date: "Yesterday, 3:40 PM" },
-  { id: "4", name: "P-ID-AREA-4-REV-B.dwg", status: "reviewed", size: "15.2 MB", date: "Jul 6, 2:00 PM", project: "Refinery TAR 2024" },
-  { id: "5", name: "STRUCTURAL-CALC-FRAME-01.pdf", status: "completed", size: "3.1 MB", date: "Jul 5, 11:20 AM" },
-];
-
-const statusConfig: Record<DocumentStatus, { icon: typeof Clock; label: string; className: string }> = {
-  uploaded: { icon: Upload, label: "Uploaded", className: "text-slate-500 bg-slate-100 dark:bg-slate-800" },
-  processing: { icon: Clock, label: "Processing", className: "text-blue-500 bg-blue-500/10" },
-  completed: { icon: CheckCircle2, label: "Completed", className: "text-accent-500 bg-accent-500/10" },
-  reviewed: { icon: CheckCircle2, label: "Reviewed", className: "text-violet-500 bg-violet-500/10" },
-  error: { icon: AlertCircle, label: "Error", className: "text-red-500 bg-red-500/10" },
-};
+import { AlertCircle, FileText, RefreshCw, Search, Upload } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { formatBytes } from "@/lib/utils";
+import { listUserDocuments, type StoredDocument } from "@/lib/firebase/storage";
 
 export default function DocumentsPage() {
+  const { user, loading: authLoading } = useAuth();
+  const [listing, setListing] = useState<{ uid: string; documents: StoredDocument[]; error: string }>({ uid: "", documents: [], error: "" });
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<DocumentStatus | "all">("all");
+  const loading = authLoading || Boolean(user && listing.uid !== user.uid);
+  const documents = useMemo(() => listing.uid === user?.uid ? listing.documents : [], [listing, user?.uid]);
+  const error = listing.uid === user?.uid ? listing.error : "";
 
-  const filtered = MOCK_DOCS.filter((d) => {
-    const matchSearch = d.name.toLowerCase().includes(search.toLowerCase());
-    const matchFilter = filter === "all" || d.status === filter;
-    return matchSearch && matchFilter;
-  });
+  useEffect(() => {
+    let active = true;
+    if (authLoading || !user) return;
+    void listUserDocuments(user.uid).then((items) => {
+      if (active) setListing({ uid: user.uid, documents: items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), error: "" });
+    }).catch(() => {
+      if (active) setListing({ uid: user.uid, documents: [], error: "Documents could not be loaded. Check your connection and account access, then try again." });
+    });
+    return () => { active = false; };
+  }, [authLoading, user]);
+
+  const filtered = useMemo(() => documents.filter((document) => document.name.toLowerCase().includes(search.toLowerCase())), [documents, search]);
 
   return (
     <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="flex items-center justify-between"
-      >
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-white">Documents</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Upload and manage your engineering documents.</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-accent-600 dark:text-accent-400">Your workspace</p>
+          <h1 className="mt-2 font-display text-2xl font-bold text-slate-900 dark:text-white sm:text-3xl">Documents</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">PDF files stored in your account. Uploading a file does not analyze it.</p>
         </div>
-        <Link
-          href="/documents/upload"
-          className="flex items-center gap-2 px-4 py-2.5 bg-accent-500 hover:bg-accent-600 text-white font-semibold text-sm rounded-xl transition-all shadow-sm"
-        >
-          <Upload className="w-4 h-4" />
-          Upload
-        </Link>
-      </motion.div>
+        <Link href="/documents/upload" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white hover:bg-accent-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2"><Upload className="h-4 w-4" />Upload PDF</Link>
+      </header>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search documents..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 pr-4 py-2.5 text-sm bg-white dark:bg-brand-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-accent-500 transition-colors w-64"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-slate-400" />
-          {(["all", "uploaded", "processing", "completed", "reviewed"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-lg capitalize transition-colors",
-                filter === s
-                  ? "bg-accent-500/10 text-accent-500 border border-accent-500/30"
-                  : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-              )}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="relative block w-full max-w-sm">
+          <span className="sr-only">Search stored documents</span>
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input type="search" placeholder="Search file names" value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-800 dark:bg-brand-900 dark:text-white" />
+        </label>
+        <p className="text-xs text-slate-500 dark:text-slate-400">Stored files do not expire automatically. Follow your organization&apos;s retention process.</p>
       </div>
 
-      {/* Table */}
-      <div className="bg-white dark:bg-brand-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-card overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-slate-100 dark:border-slate-800">
-              {["Document", "Status", "Project", "Date", "Size"].map((col) => (
-                <th key={col} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {filtered.map((doc) => {
-              const status = statusConfig[doc.status];
-              return (
-                <tr key={doc.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-4 h-4 text-slate-400" strokeWidth={1.5} />
-                      </div>
-                      <span className="text-sm font-medium text-slate-900 dark:text-white truncate max-w-xs">{doc.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4">
-                    <span className={cn("inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full", status.className)}>
-                      <status.icon className="w-3 h-3" />
-                      {status.label}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">
-                    {doc.project ?? "—"}
-                  </td>
-                  <td className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                    {doc.date}
-                  </td>
-                  <td className="px-5 py-4 text-sm text-slate-500 dark:text-slate-400">
-                    {doc.size}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {filtered.length === 0 && (
-          <div className="py-16 text-center">
-            <FileText className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
-            <p className="text-sm text-slate-400">No documents found</p>
-          </div>
-        )}
-      </div>
+      {error && <p role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"><AlertCircle className="h-4 w-4" />{error}</p>}
+
+      <section aria-label="Stored documents" className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-brand-900">
+        {loading ? <div className="flex items-center justify-center gap-2 p-12 text-sm text-slate-500"><RefreshCw className="h-4 w-4 animate-spin motion-reduce:animate-none" />Loading stored files...</div> : filtered.length === 0 ? <div className="p-12 text-center">
+          <FileText className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-700" />
+          <h2 className="mt-3 font-semibold text-slate-800 dark:text-slate-200">{search ? "No matching files" : "No stored PDFs yet"}</h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{search ? "Try another file name." : "Uploaded PDFs will appear here. This library does not run document analysis."}</p>
+        </div> : <>
+          <div className="hidden grid-cols-[1fr_120px_200px] gap-4 border-b border-slate-100 px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:border-slate-800 sm:grid"><span>File</span><span>Size</span><span>Uploaded</span></div>
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {filtered.map((document) => <li key={document.fullPath} className="grid gap-2 px-5 py-4 sm:grid-cols-[1fr_120px_200px] sm:items-center sm:gap-4">
+              <div className="flex min-w-0 items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-800"><FileText className="h-4 w-4" /></span><span className="min-w-0"><span className="block truncate text-sm font-medium text-slate-900 dark:text-white">{document.name}</span><span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Private workspace file</span></span></div>
+              <span className="pl-12 text-xs text-slate-500 dark:text-slate-400 sm:pl-0">{formatBytes(document.size)}</span>
+              <time dateTime={document.createdAt} className="pl-12 text-xs text-slate-500 dark:text-slate-400 sm:pl-0">{new Date(document.createdAt).toLocaleString()}</time>
+            </li>)}
+          </ul>
+        </>}
+      </section>
     </div>
   );
 }

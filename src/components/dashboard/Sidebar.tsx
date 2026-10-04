@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  LayoutDashboard, FileText, FolderOpen, Sparkles,
+  LayoutDashboard, FileText, FolderOpen, ReceiptText, ClipboardCheck, MapPinned,
   Settings, User, LogOut, Zap, ChevronRight
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
@@ -13,7 +13,9 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/documents", label: "Documents", icon: FileText },
   { href: "/projects", label: "Projects", icon: FolderOpen },
-  { href: "/ai-review", label: "AI Review", icon: Sparkles },
+  { href: "/billcheck", label: "BillCheck", icon: ReceiptText },
+  { href: "/field-progress", label: "Field Progress", icon: MapPinned },
+  { href: "/saved-drafts", label: "Saved drafts", icon: ClipboardCheck },
 ];
 
 const bottomItems = [

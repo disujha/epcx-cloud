@@ -7,12 +7,12 @@ import { cn } from "@/lib/utils";
 
 const plans = [
   {
-    name: "Starter Pilot",
-    price: "Project Pilot",
+    name: "Starter",
+    price: "Project access",
     period: "",
     desc: "Evaluate our document verification platform on a single active project package.",
     highlight: false,
-    cta: "Book Pilot",
+    cta: "Contact us",
     href: "/contact",
     features: [
       "Up to 5 team members",
@@ -79,7 +79,7 @@ export function PricingSection() {
             <span className="gradient-text">industrial scale</span>
           </h2>
           <p className="mt-4 text-lg text-slate-500 dark:text-slate-400">
-            Deploy as a flexible project pilot or integrate deeply into your global engineering workflow.
+            Start with a single project or integrate EPCX Cloud into your engineering workflow.
           </p>
         </motion.div>
 

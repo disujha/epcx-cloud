@@ -2,6 +2,9 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  getAdditionalUserInfo,
+  signInAnonymously,
+  linkWithPopup,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
@@ -28,7 +31,23 @@ export async function registerWithEmail(
 }
 
 export async function signInWithGoogle() {
-  return signInWithPopup(auth, googleProvider);
+  const result = await signInWithPopup(auth, googleProvider);
+  const profileName = getAdditionalUserInfo(result)?.profile?.name;
+  if (!result.user.displayName && typeof profileName === "string" && profileName.trim()) {
+    await updateProfile(result.user, { displayName: profileName.trim() });
+  }
+  return result;
+}
+
+export async function ensureAnonymousSession() {
+  return auth.currentUser ?? (await signInAnonymously(auth)).user;
+}
+
+export async function linkCurrentUserWithGoogle() {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Start a drawing session before linking Google.");
+  if (!user.isAnonymous) return user;
+  return (await linkWithPopup(user, googleProvider)).user;
 }
 
 export async function signOut() {
