@@ -908,6 +908,101 @@
   white-space: nowrap;
 }
 
+/* Drawing Name Editing & Last Updated Badge */
+.drawing-name-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.drawing-name-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #d0dcd2;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #3b6649;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.drawing-name-edit-btn:hover {
+  background: #edf5ef;
+  border-color: #6da280;
+  color: #1e5234;
+}
+
+.drawing-name-edit-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.drawing-name-edit-input {
+  height: 26px;
+  padding: 0 8px;
+  border: 1.5px solid #286849;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a3023;
+  outline: none;
+  background: #ffffff;
+}
+
+.drawing-name-edit-save {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: #286849;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.drawing-name-edit-save:hover {
+  background: #1e5234;
+}
+
+.drawing-name-edit-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #d0dcd2;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #6b7a70;
+  cursor: pointer;
+}
+
+.drawing-name-edit-cancel:hover {
+  background: #f4f6f4;
+  color: #333333;
+}
+
+.drawing-last-updated-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid #d3e1d6;
+  border-radius: 4px;
+  background: #f1f7f2;
+  color: #386047;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* Drawing Workbench Chrome Add Record */
 .drawing-chrome-add-wrap {
   position: relative;

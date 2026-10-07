@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, Copy, Crop, Eye, EyeOff, FileText, Highlighter, LoaderCircle, Lock, MousePointer2, MoveUpRight, MoreHorizontal, Pencil, Plus, RotateCcw, RotateCw, Save, ShieldCheck, Type, Undo2, Redo2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, Clock, Copy, Crop, Eye, EyeOff, FileText, Highlighter, LoaderCircle, Lock, MousePointer2, MoveUpRight, MoreHorizontal, Pencil, Plus, RotateCcw, RotateCw, Save, ShieldCheck, Type, Undo2, Redo2, Upload, X } from "lucide-react";
 import { downloadDocument, uploadDocument } from "@/lib/firebase/storage";
 import type { FieldProject } from "@/components/field-progress/FieldProjectProfile";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -401,6 +401,14 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(""), 8000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
   const [dragging, setDragging] = useState(false);
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [localText, setLocalText] = useState("");
@@ -1078,10 +1086,52 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     beginDrawing(pendingFile);
   }
 
+  async function handleSaveDrawingName() {
+    const nextName = renameValue.trim();
+    if (!nextName || !user || user.isAnonymous) {
+      setIsRenaming(false);
+      return;
+    }
+    setDrawingName(nextName);
+    setIsRenaming(false);
+    const drawingId = currentDrawingId || localStorage.getItem(`epcx-current-drawing:${user.uid}`);
+    if (!drawingId) return;
+    const now = new Date().toISOString();
+    const existingSession = drawingSessions[drawingId] ?? {};
+    const updatedSession = { ...existingSession, name: nextName, updatedAt: now };
+    setDrawingSessions((prev) => ({ ...prev, [drawingId]: updatedSession }));
+    try {
+      const local = await localDrawingStore(`${user.uid}:${drawingId}`);
+      if (local) await localDrawingStore(`${user.uid}:${drawingId}`, { ...local, snapshot: updatedSession });
+      if (navigator.onLine) {
+        await setDoc(doc(db, "users", user.uid, "fieldDrawings", drawingId), sanitizeForFirestore({ name: nextName, updatedAt: now }), { merge: true });
+      }
+      setToast("Drawing name updated.");
+      window.setTimeout(() => setToast(""), 2200);
+    } catch (err) {
+      console.error("Could not save drawing name", err);
+    }
+  }
+
   async function openDrawing(drawingId: string) {
     if (!user || user.isAnonymous) return;
-    const snapshot = drawingSessions[drawingId];
-    if (!snapshot) return;
+    setError("");
+    let snapshot = drawingSessions[drawingId];
+    if (!snapshot) {
+      try {
+        const local = await localDrawingStore(`${user.uid}:${drawingId}`);
+        if (local?.snapshot) snapshot = local.snapshot as Record<string, unknown>;
+        if (!snapshot && navigator.onLine) {
+          const docSnap = await getDoc(doc(db, "users", user.uid, "fieldDrawings", drawingId));
+          if (docSnap.exists()) snapshot = { id: drawingId, ...docSnap.data() };
+        }
+        if (snapshot) setDrawingSessions((prev) => ({ ...prev, [drawingId]: snapshot }));
+      } catch { /* fallback */ }
+    }
+    if (!snapshot) {
+      setError("This drawing record could not be found.");
+      return;
+    }
     try {
       const localFile = (await localDrawingStore(`${user.uid}:${drawingId}`))?.file ?? (await localDrawingList(user.uid)).find((row) => row.id === drawingId)?.file;
       let source = localFile;
@@ -1089,12 +1139,26 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       if (!source && navigator.onLine) {
         try {
           source = await downloadDocument(storagePath);
-          await localDrawingStore(`${user.uid}:${drawingId}`, { file: source, snapshot });
+          if (source) await localDrawingStore(`${user.uid}:${drawingId}`, { file: source, snapshot });
         } catch { /* offline fallback */ }
       }
-      if (!source) { setError("This drawing is not available offline yet. Reconnect and try again."); return; }
+      if (!source && navigator.onLine && typeof snapshot.downloadURL === "string" && snapshot.downloadURL) {
+        try {
+          const res = await fetch(snapshot.downloadURL);
+          if (res.ok) {
+            const blob = await res.blob();
+            const fileName = String(snapshot.fileName || snapshot.name || "drawing");
+            source = new File([blob], fileName, { type: blob.type || String(snapshot.contentType || snapshot.mimeType || "application/pdf") });
+            await localDrawingStore(`${user.uid}:${drawingId}`, { file: source, snapshot });
+          }
+        } catch { /* downloadURL fetch fallback */ }
+      }
+      if (!source) {
+        setError("This drawing file could not be retrieved from storage. Check your network connection or re-upload.");
+        return;
+      }
       const priorId = localStorage.getItem(`epcx-current-drawing:${user.uid}`);
-      if (priorId && fileRef.current) {
+      if (priorId && fileRef.current && priorId !== drawingId) {
         try {
           const timestamp = new Date().toISOString();
           const contentType = await detectDrawingContentType(fileRef.current);
@@ -1506,6 +1570,16 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     (drawingSessions[currentDrawingId]?.updatedAt && String(drawingSessions[currentDrawingId]?.updatedAt).slice(0, 10) === localDateKey())
   ));
 
+  const currentDrawingSession = currentDrawingId ? drawingSessions[currentDrawingId] : null;
+  const currentUpdatedIso = currentDrawingSession?.updatedAt || currentDrawingSession?.createdAt;
+  const lastUpdatedDisplay = currentUpdatedIso && typeof currentUpdatedIso === "string" ? (() => {
+    const d = new Date(currentUpdatedIso);
+    if (isNaN(d.getTime())) return "";
+    const dateStr = d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const timeStr = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `${dateStr}, ${timeStr}`;
+  })() : "";
+
   return <main className="drawing-first">
     <aside className="drawing-workspace-rail">
       <button className="drawing-add-button" onClick={() => inputRef.current?.click()} disabled={!user || user.isAnonymous}><Plus size={16}/> Add Drawing</button>
@@ -1699,10 +1773,57 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       <header className="drawing-work-header">
         <Link href="/" className="drawing-logo">EPCX<span>.cloud</span></Link>
         <div className="drawing-file-heading">
-          <div className="flex items-center gap-2">
-            <b title={`${drawingName}${revision ? ` · Rev ${revision}` : ""}`}>
-              {drawingName || file.name.replace(/\.[^.]+$/, "")}{revision ? ` · Rev ${revision}` : ""}
-            </b>
+          <div className="flex items-center gap-2 flex-wrap">
+            {isRenaming ? (
+              <form
+                className="drawing-name-edit-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleSaveDrawingName();
+                }}
+              >
+                <input
+                  type="text"
+                  className="drawing-name-edit-input"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setIsRenaming(false);
+                  }}
+                />
+                <button type="submit" title="Save name" className="drawing-name-edit-save" aria-label="Save drawing name">
+                  <Check size={13} />
+                </button>
+                <button type="button" title="Cancel" className="drawing-name-edit-cancel" aria-label="Cancel editing" onClick={() => setIsRenaming(false)}>
+                  <X size={13} />
+                </button>
+              </form>
+            ) : (
+              <div className="drawing-name-row">
+                <b title={`${drawingName}${revision ? ` · Rev ${revision}` : ""}`}>
+                  {drawingName || file.name.replace(/\.[^.]+$/, "")}{revision ? ` · Rev ${revision}` : ""}
+                </b>
+                <button
+                  type="button"
+                  className="drawing-name-edit-btn"
+                  title="Edit drawing name"
+                  aria-label="Edit drawing name"
+                  onClick={() => {
+                    setRenameValue(drawingName || file.name.replace(/\.[^.]+$/, ""));
+                    setIsRenaming(true);
+                  }}
+                >
+                  <Pencil size={12} />
+                </button>
+              </div>
+            )}
+            {lastUpdatedDisplay && (
+              <span className="drawing-last-updated-badge" title={`Last updated: ${lastUpdatedDisplay}`}>
+                <Clock size={11} />
+                <span>Updated {lastUpdatedDisplay}</span>
+              </span>
+            )}
             {!isCurrentDrawingToday && (
               <span className="historical-drawing-pill" title="This is a historical record. Today's live sheet may differ.">
                 Historical field record · {revision ? `Rev ${revision}` : "Previous"}
