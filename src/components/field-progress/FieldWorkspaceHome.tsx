@@ -560,7 +560,7 @@ export function FieldWorkspaceHome({
       for (const file of selected) {
         const id = crypto.randomUUID();
         const timestamp = new Date().toISOString();
-        const date = type === "TBT" ? tbtDetails.date || localDay() : localDay();
+        const date = type === "TBT" ? tbtDetails.date || (historyDay || localDay()) : (historyDay || localDay());
         const path = `documents/${user.uid}/field-records/${id}/original`;
         const downloadURL = await uploadDocument(file, user.uid, null, () => {}, { folder: `field-records/${id}`, objectName: "original" });
         const title = type === "TBT" && tbtDetails.topic.trim() ? tbtDetails.topic.trim() : file.name.replace(/\.[^.]+$/, "") || labels[type];

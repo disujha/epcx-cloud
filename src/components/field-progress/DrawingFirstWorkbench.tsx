@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, Clock, Copy, Crop, Eye, EyeOff, FileText, Highlighter, LoaderCircle, Lock, MousePointer2, MoveUpRight, MoreHorizontal, Pencil, Plus, RotateCcw, RotateCw, Save, ShieldCheck, Type, Undo2, Redo2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Calendar, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, Clock, Copy, Crop, Eye, EyeOff, FileSpreadsheet, FileText, Highlighter, LoaderCircle, Lock, MousePointer2, MoveUpRight, MoreHorizontal, Pencil, Plus, RotateCcw, RotateCw, Save, ShieldCheck, Type, Undo2, Redo2, Upload, UploadCloud, X } from "lucide-react";
 import { downloadDocument, uploadDocument } from "@/lib/firebase/storage";
 import type { FieldProject } from "@/components/field-progress/FieldProjectProfile";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -15,7 +15,8 @@ import { EpcxSpinner } from "@/components/ui/EpcxSpinner";
 
 type Tool = "select" | "mark" | "highlight" | "draw" | "arrow" | "text" | "crop" | "move";
 type MarkStatus = "In Progress" | "Complete";
-type Mark = { id: string; x: number; y: number; page: number; kind: "mark" | "highlight" | "draw" | "arrow" | "text"; status?: MarkStatus; itemType?: string; label?: string; line?: string; crew?: string; welder?: string; points?: { x: number; y: number }[]; width?: number; height?: number; createdAt?: string; updatedAt?: string; history?: { action: string; at: string }[]; extractedText?: TextExtractionResult };
+type RecordUploadType = "PHOTO" | "EXCEL" | "DPR" | "TBT" | "DOCUMENT" | "DRAWING";
+type Mark = { id: string; x: number; y: number; page: number; kind: "mark" | "highlight" | "draw" | "arrow" | "text"; status?: MarkStatus; itemType?: string; label?: string; line?: string; crew?: string; welder?: string; points?: { x: number; y: number }[]; width?: number; height?: number; fieldDate?: string; createdAt?: string; updatedAt?: string; history?: { action: string; at: string }[]; extractedText?: TextExtractionResult };
 type WorkEvent = { id: string; ownerUid: string; workItemId: string; drawingId: string; action: "created" | "status_changed" | "renamed" | "moved" | "deleted" | "reopened"; status?: MarkStatus; localDate: string; timestamp: string; userUid: string };
 type LocalDrawing = { id: string; file?: File; snapshot: Record<string, unknown> };
 const accepted = ".pdf,.jpg,.jpeg,.png,.webp";
@@ -311,11 +312,27 @@ function localDateKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function workItemEventsBetween(current: Mark[], next: Mark[], ownerUid: string, drawingId: string): WorkEvent[] {
+function getYesterdayDateKey(date = new Date()) {
+  const d = new Date(date);
+  d.setDate(d.getDate() - 1);
+  return localDateKey(d);
+}
+
+function detectFileType(file: File): RecordUploadType {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) return "EXCEL";
+  if (file.type.startsWith("image/")) return "PHOTO";
+  if (name.includes("dpr") || name.includes("daily") || name.includes("progress")) return "DPR";
+  if (name.includes("tbt") || name.includes("toolbox") || name.includes("safety")) return "TBT";
+  if (name.includes("iso") || name.includes("dwg") || name.includes("drawing") || name.includes("pid")) return "DRAWING";
+  return "DOCUMENT";
+}
+
+function workItemEventsBetween(current: Mark[], next: Mark[], ownerUid: string, drawingId: string, eventLocalDate: string = localDateKey()): WorkEvent[] {
   const before = new Map(current.filter((mark) => mark.kind === "mark").map((mark) => [mark.id, mark]));
   const after = new Map(next.filter((mark) => mark.kind === "mark").map((mark) => [mark.id, mark]));
   const timestamp = new Date().toISOString();
-  const makeEvent = (workItemId: string, action: WorkEvent["action"], status?: MarkStatus): WorkEvent => ({ id: crypto.randomUUID(), ownerUid, workItemId, drawingId, action, ...(status ? { status } : {}), localDate: localDateKey(), timestamp, userUid: ownerUid });
+  const makeEvent = (workItemId: string, action: WorkEvent["action"], status?: MarkStatus): WorkEvent => ({ id: crypto.randomUUID(), ownerUid, workItemId, drawingId, action, ...(status ? { status } : {}), localDate: eventLocalDate, timestamp, userUid: ownerUid });
   const appended: WorkEvent[] = [];
   for (const [id, mark] of after) {
     const previous = before.get(id);
@@ -345,6 +362,19 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
   const inputRef = useRef<HTMLInputElement>(null);
   const photoCaptureRef = useRef<HTMLInputElement>(null);
   const docCaptureRef = useRef<HTMLInputElement>(null);
+  const excelCaptureRef = useRef<HTMLInputElement>(null);
+  const dprCaptureRef = useRef<HTMLInputElement>(null);
+  const tbtCaptureRef = useRef<HTMLInputElement>(null);
+  const [activeRecordDate, setActiveRecordDate] = useState<string>(() => localDateKey());
+  const [recordModalOpen, setRecordModalOpen] = useState(false);
+  const [stagedRecordFiles, setStagedRecordFiles] = useState<File[]>([]);
+  const [recordFormType, setRecordFormType] = useState<RecordUploadType>("DOCUMENT");
+  const [recordFormTitle, setRecordFormTitle] = useState("");
+  const [recordFormDate, setRecordFormDate] = useState<string>(() => localDateKey());
+  const [recordFormNotes, setRecordFormNotes] = useState("");
+  const [recordFormWorkItem, setRecordFormWorkItem] = useState("");
+  const [recordSubmitting, setRecordSubmitting] = useState(false);
+  const [isDraggingOverStage, setIsDraggingOverStage] = useState(false);
   const initialActionHandled = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -535,7 +565,7 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     const signedInOwner = user && !user.isAnonymous ? user.uid : "";
     const drawingId = signedInOwner ? localStorage.getItem(`epcx-current-drawing:${signedInOwner}`) ?? "" : "";
     if (signedInOwner && drawingId) {
-      const appended = workItemEventsBetween(current, next, signedInOwner, drawingId);
+      const appended = workItemEventsBetween(current, next, signedInOwner, drawingId, activeRecordDate);
       if (appended.length) { const updatedEvents = [...workEventsRef.current, ...appended]; workEventsRef.current = updatedEvents; setWorkEvents(updatedEvents); }
       
       // Authoritative synchronization to central work item store
@@ -548,7 +578,7 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
           id: m.id,
           projectId: project?.id || "",
           projectName: project?.name || "",
-          fieldDate: (m.createdAt || now).slice(0, 10),
+          fieldDate: m.fieldDate || activeRecordDate || (m.createdAt || now).slice(0, 10),
           discipline: (m.itemType?.toLowerCase() as WorkType) || "piping",
           drawingId: drawingId || "",
           drawingName: currentDrawingName,
@@ -1031,52 +1061,130 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     setSyncState("saving"); setWorkspaceView("drawings"); setWorkListOpen(false); setShowDrawingDetails(false); setPendingFile(null); setPendingContentType(null);
   }
 
-  async function handleContextualCapture(type: "PHOTO" | "DOCUMENT", selectedFile?: File) {
-    if (!selectedFile || !user || user.isAnonymous) return;
+  function stageFileForRecord(files: File[], suggestedType?: RecordUploadType) {
+    if (!files.length) return;
+    const first = files[0];
+    const type = suggestedType || detectFileType(first);
+    setStagedRecordFiles(files);
+    setRecordFormType(type);
+    setRecordFormTitle(first.name.replace(/\.[^.]+$/, ""));
+    setRecordFormDate(activeRecordDate || localDateKey());
+    const activeItem = editing || marks.find((m) => m.id === selectedId);
+    setRecordFormWorkItem(activeItem?.label?.trim() || "");
+    setRecordFormNotes("");
+    setRecordModalOpen(true);
+    setAddMenuOpen(false);
+  }
+
+  function handleCaptureSelect(type: RecordUploadType, file?: File) {
+    if (!file) return;
+    stageFileForRecord([file], type);
+  }
+
+  function handleDroppedFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    stageFileForRecord(Array.from(files));
+  }
+
+  async function handleSaveRecordModal(event: FormEvent) {
+    event.preventDefault();
+    if (!stagedRecordFiles.length || !user || user.isAnonymous) {
+      setRecordModalOpen(false);
+      return;
+    }
+    setRecordSubmitting(true);
     const drawingId = currentDrawingId;
     const activeItem = editing || marks.find((m) => m.id === selectedId);
-    const itemLabel = activeItem?.label?.trim() || "";
-    const id = crypto.randomUUID();
-    const timestamp = new Date().toISOString();
-    const date = localDateKey();
-    const path = `documents/${user.uid}/field-records/${id}/original`;
-    setToast(`Uploading ${type === "PHOTO" ? "photo" : "document"}…`);
+    const itemLabel = recordFormWorkItem.trim() || activeItem?.label?.trim() || "";
+    const targetDate = recordFormDate || activeRecordDate || localDateKey();
+
     try {
-      const downloadURL = await uploadDocument(selectedFile, user.uid, null, () => {}, {
-        folder: `field-records/${id}`,
-        objectName: "original",
-      });
-      const record = {
-        id,
-        ownerUid: user.uid,
-        createdBy: user.uid,
-        updatedBy: user.uid,
-        type,
-        title: itemLabel ? `${itemLabel} - ${selectedFile.name.replace(/\.[^.]+$/, "")}` : selectedFile.name.replace(/\.[^.]+$/, ""),
-        fileName: selectedFile.name,
-        filePath: path,
-        downloadURL,
-        mimeType: selectedFile.type || "application/octet-stream",
-        recordDate: date,
-        documentDate: date,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        projectId: project?.id || null,
-        projectName: project?.name || "",
-        drawingId: drawingId || null,
-        drawingName: drawingName || null,
-        workItemId: activeItem?.id || null,
-        workItemLabel: itemLabel || null,
-        area: area || "",
-        tags: [drawingName, itemLabel].filter(Boolean),
-      };
-      await setDoc(doc(db, "users", user.uid, "fieldDocuments", id), record);
-      setToast(`${type === "PHOTO" ? "Photo" : "Document"} attached to ${itemLabel || drawingName || "drawing"}.`);
-    } catch {
-      setToast("Upload failed. Check your connection.");
+      for (const stagedFile of stagedRecordFiles) {
+        if (recordFormType === "DRAWING" && (isPdf(stagedFile) || stagedFile.type.startsWith("image/"))) {
+          setRecordModalOpen(false);
+          setPendingFile(stagedFile);
+          setDrawingName(recordFormTitle.trim() || stagedFile.name.replace(/\.[^.]+$/, ""));
+          setShowDrawingDetails(true);
+          continue;
+        }
+
+        const id = crypto.randomUUID();
+        const timestamp = new Date().toISOString();
+        const path = `documents/${user.uid}/field-records/${id}/original`;
+        setToast(`Uploading ${stagedFile.name}…`);
+
+        const downloadURL = await uploadDocument(stagedFile, user.uid, null, () => {}, {
+          folder: `field-records/${id}`,
+          objectName: "original",
+        });
+
+        const recordType = recordFormType === "EXCEL" ? "DOCUMENT" : recordFormType;
+        const isExcel = stagedFile.name.toLowerCase().endsWith(".xlsx") || stagedFile.name.toLowerCase().endsWith(".xls") || stagedFile.name.toLowerCase().endsWith(".csv");
+        const title = recordFormTitle.trim() || (itemLabel ? `${itemLabel} - ${stagedFile.name.replace(/\.[^.]+$/, "")}` : stagedFile.name.replace(/\.[^.]+$/, ""));
+
+        const record = {
+          id,
+          ownerUid: user.uid,
+          createdBy: user.uid,
+          updatedBy: user.uid,
+          type: recordType,
+          title,
+          fileName: stagedFile.name,
+          filePath: path,
+          downloadURL,
+          mimeType: stagedFile.type || (isExcel ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/octet-stream"),
+          recordDate: targetDate,
+          documentDate: targetDate,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          projectId: project?.id || null,
+          projectName: project?.name || "",
+          drawingId: drawingId || null,
+          drawingName: drawingName || null,
+          drawingRevision: revision || null,
+          workItemId: activeItem?.id || null,
+          workItemLabel: itemLabel || null,
+          area: area || "",
+          remarks: recordFormNotes || "",
+          ocrStatus: recordFormType === "DPR" ? "needs-ocr" : "not-applicable",
+          rawOcrText: "",
+          extracted: {},
+          confirmedFields: [],
+          tags: [
+            drawingName,
+            itemLabel,
+            recordFormType === "EXCEL" ? "Excel" : null,
+            recordFormType === "TBT" ? "Safety" : null,
+            recordFormType === "DPR" ? "DPR" : null,
+          ].filter(Boolean),
+          status: "active",
+        };
+
+        await setDoc(doc(db, "users", user.uid, "fieldDocuments", id), sanitizeForFirestore(record));
+
+        if (activeItem) {
+          const existingCentral = fieldContext?.workItems?.find((w) => w.id === activeItem.id);
+          if (existingCentral) {
+            const updatedCentral: CentralWorkItem = {
+              ...existingCentral,
+              ...(recordFormType === "PHOTO" ? { photos: [...(existingCentral.photos || []), downloadURL] } : { documents: [...(existingCentral.documents || []), id] }),
+            };
+            void fieldContext?.addOrUpdateWorkItem(updatedCentral);
+          }
+        }
+      }
+
+      setToast(`Saved ${stagedRecordFiles.length > 1 ? `${stagedRecordFiles.length} records` : recordFormTitle || stagedRecordFiles[0].name} for ${targetDate}`);
+    } catch (err) {
+      console.error("Failed to upload/save field record", err);
+      setToast("Upload failed. Check your network connection.");
     } finally {
-      setAddMenuOpen(false);
-      window.setTimeout(() => setToast(""), 3500);
+      setRecordSubmitting(false);
+      setRecordModalOpen(false);
+      setStagedRecordFiles([]);
+      setRecordFormTitle("");
+      setRecordFormNotes("");
+      window.setTimeout(() => setToast(""), 4000);
     }
   }
 
@@ -1289,7 +1397,7 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       const now = new Date().toISOString();
       const existingMarks = marksRef.current.filter((m) => m.kind === "mark");
       const autoLabel = pendingItemLabel.trim() || `J-${String(existingMarks.length + 1).padStart(2, "0")}`;
-      const mark: Mark = { id: crypto.randomUUID(), ...p, page, kind: "mark", status: "In Progress", itemType: "Joint", label: autoLabel, line: pendingLine, createdAt: now, updatedAt: now };
+      const mark: Mark = { id: crypto.randomUUID(), ...p, page, kind: "mark", status: "In Progress", itemType: "Joint", label: autoLabel, line: pendingLine, fieldDate: activeRecordDate, createdAt: now, updatedAt: now };
       commitMarks((old) => [...old, { ...mark, history: [{ action: "Created", at: now }] }], "Work item marked"); setSelectedId(mark.id); setEditing({ ...mark, history: [{ action: "Created", at: now }] }); setPendingLine(""); setPendingItemLabel(""); setHintVisible(false); sessionStorage.setItem("epcx-workbench-mark-hint", "1");
     }
     if (tool === "text") { setLocalText(""); setEditing({ id: crypto.randomUUID(), ...p, page, kind: "text", label: "" }); }
@@ -1584,8 +1692,11 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     <aside className="drawing-workspace-rail">
       <button className="drawing-add-button" onClick={() => inputRef.current?.click()} disabled={!user || user.isAnonymous}><Plus size={16}/> Add Drawing</button>
       <input ref={inputRef} className="sr-only" type="file" accept={accepted} onChange={(event) => void openFile(event.target.files?.[0])}/>
-      <input ref={photoCaptureRef} className="sr-only" type="file" accept="image/*" onChange={(event) => void handleContextualCapture("PHOTO", event.target.files?.[0])}/>
-      <input ref={docCaptureRef} className="sr-only" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={(event) => void handleContextualCapture("DOCUMENT", event.target.files?.[0])}/>
+      <input ref={photoCaptureRef} className="sr-only" type="file" accept="image/*" onChange={(event) => { handleCaptureSelect("PHOTO", event.target.files?.[0]); event.target.value = ""; }}/>
+      <input ref={excelCaptureRef} className="sr-only" type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { handleCaptureSelect("EXCEL", event.target.files?.[0]); event.target.value = ""; }}/>
+      <input ref={dprCaptureRef} className="sr-only" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => { handleCaptureSelect("DPR", event.target.files?.[0]); event.target.value = ""; }}/>
+      <input ref={tbtCaptureRef} className="sr-only" type="file" accept=".pdf,.doc,.docx,image/*" onChange={(event) => { handleCaptureSelect("TBT", event.target.files?.[0]); event.target.value = ""; }}/>
+      <input ref={docCaptureRef} className="sr-only" type="file" accept=".pdf,.doc,.docx,.txt" onChange={(event) => { handleCaptureSelect("DOCUMENT", event.target.files?.[0]); event.target.value = ""; }}/>
 
       <div className="drawing-rail-tabs">
         <button
@@ -1824,7 +1935,30 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
                 <span>Updated {lastUpdatedDisplay}</span>
               </span>
             )}
-            {!isCurrentDrawingToday && (
+            <div className="drawing-record-date-picker" title="Active shift / record date for markups and uploaded files">
+              <Calendar size={12} className="text-[#3b6649]" />
+              <input
+                type="date"
+                aria-label="Active shift / record date"
+                className="drawing-date-input"
+                value={activeRecordDate}
+                max={localDateKey()}
+                onChange={(e) => setActiveRecordDate(e.target.value || localDateKey())}
+              />
+              {activeRecordDate !== localDateKey() ? (
+                <button
+                  type="button"
+                  className="drawing-date-badge-previous"
+                  onClick={() => setActiveRecordDate(localDateKey())}
+                  title="Click to reset to Today"
+                >
+                  Shift: {activeRecordDate} (Reset)
+                </button>
+              ) : (
+                <span className="drawing-date-badge-today">Today</span>
+              )}
+            </div>
+            {!isCurrentDrawingToday && activeRecordDate === localDateKey() && (
               <span className="historical-drawing-pill" title="This is a historical record. Today's live sheet may differ.">
                 Historical field record · {revision ? `Rev ${revision}` : "Previous"}
               </span>
@@ -1857,7 +1991,46 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
                   </span>
                   <span className="field-submenu-text">
                     <span className="field-submenu-title">Site Inspection Photo</span>
-                    <span className="field-submenu-desc">Attach photo directly to active sheet</span>
+                    <span className="field-submenu-desc">Attach photo to active sheet or joint</span>
+                  </span>
+                  <ChevronRight size={13} className="field-submenu-arrow" />
+                </button>
+                <button
+                  className="field-submenu-item"
+                  onClick={() => { setAddMenuOpen(false); excelCaptureRef.current?.click(); }}
+                >
+                  <span className="field-submenu-icon">
+                    <FileSpreadsheet size={15} />
+                  </span>
+                  <span className="field-submenu-text">
+                    <span className="field-submenu-title">Excel / Spreadsheet Data</span>
+                    <span className="field-submenu-desc">Upload .xlsx, .xls, .csv weld or field logs</span>
+                  </span>
+                  <ChevronRight size={13} className="field-submenu-arrow" />
+                </button>
+                <button
+                  className="field-submenu-item"
+                  onClick={() => { setAddMenuOpen(false); dprCaptureRef.current?.click(); }}
+                >
+                  <span className="field-submenu-icon">
+                    <FileText size={15} />
+                  </span>
+                  <span className="field-submenu-text">
+                    <span className="field-submenu-title">Daily Progress Report (DPR)</span>
+                    <span className="field-submenu-desc">Upload DPR sheet, scan or photo for shift</span>
+                  </span>
+                  <ChevronRight size={13} className="field-submenu-arrow" />
+                </button>
+                <button
+                  className="field-submenu-item"
+                  onClick={() => { setAddMenuOpen(false); tbtCaptureRef.current?.click(); }}
+                >
+                  <span className="field-submenu-icon">
+                    <ShieldCheck size={15} />
+                  </span>
+                  <span className="field-submenu-text">
+                    <span className="field-submenu-title">Toolbox Talk (TBT) / Safety</span>
+                    <span className="field-submenu-desc">Attach safety briefing or shift record</span>
                   </span>
                   <ChevronRight size={13} className="field-submenu-arrow" />
                 </button>
@@ -1912,10 +2085,26 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
           {user?.displayName || user?.email || "Account"}
         </span>
         <button onClick={saveCurrent} disabled={saving} className="drawing-save">
-          <Save size={15}/>{saving ? "Uploading…" : saved ? "Synced" : "Save Today’s Work"}
+          <Save size={15}/>{saving ? "Uploading…" : saved ? "Synced" : activeRecordDate === localDateKey() ? "Save Today’s Work" : `Save Work (${activeRecordDate})`}
         </button>
       </header>
-      <section ref={stageRef} className="drawing-stage" style={{ touchAction: "none" }}>
+      <section
+        ref={stageRef}
+        className="drawing-stage relative"
+        style={{ touchAction: "none" }}
+        onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); setIsDraggingOverStage(true); }}
+        onDragLeave={(event) => { event.preventDefault(); event.stopPropagation(); setIsDraggingOverStage(false); }}
+        onDrop={(event) => { event.preventDefault(); event.stopPropagation(); setIsDraggingOverStage(false); handleDroppedFiles(event.dataTransfer.files); }}
+      >
+        {isDraggingOverStage && (
+          <div className="drawing-stage-drop-overlay">
+            <div className="drawing-stage-drop-content">
+              <UploadCloud size={44} />
+              <h3>Drop file to attach to drawing</h3>
+              <p>Attach photo, Excel sheet, DPR, or document for shift date: {activeRecordDate}</p>
+            </div>
+          </div>
+        )}
         <div ref={sheetRef} className={`drawing-sheet ${tool === "crop" ? "is-cropping" : ""} ${tool === "mark" ? "is-marking" : ""} ${tool === "select" ? "is-panning" : ""} ${panState ? "is-grabbing" : ""}`} onPointerDown={stagePointerDown} onPointerMove={stagePointerMove} onPointerUp={endPointer} onPointerCancel={() => { touchPoints.current.clear(); pinchStart.current = null; setPanState(null); setCropStart(null); setCropRegion(null); setDrawStart(null); setDrawingPoints([]); setMarkupPreview(null); }} style={{ transform: `translate(${panOffset.x}px, ${panOffset.y}px) rotate(${rotation}deg) scale(${zoom})`, transformOrigin: "center", width: isPdf(file) ? pdfPage?.width : undefined, height: isPdf(file) ? pdfPage?.height : undefined, touchAction: "none" }}>
         {isPdf(file) ? <>{pdfPage ? <canvas className="drawing-pdf-canvas" width={pdfPage.data?.width} height={pdfPage.data?.height} ref={(node) => { if (node && pdfPage.data) node.getContext("2d")?.putImageData(pdfPage.data, 0, 0); }} style={{ width: pdfPage.width, height: pdfPage.height, filter: enhancedView ? "contrast(140%) brightness(105%) grayscale(15%)" : undefined }} /> : <div className="drawing-loading"><EpcxSpinner size="sm" inline />Opening drawing…</div>}</> : <img className={`drawing-image ${rotation % 180 ? "is-rotated" : ""}`} src={url} alt={file.name} style={{ filter: enhancedView ? "contrast(140%) brightness(105%) grayscale(15%)" : undefined }}/>}
         <div className="drawing-overlay">
@@ -1929,18 +2118,17 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
             const isComplete = mark.status === "Complete";
             const label = mark.label?.trim() || "Item";
             const central = fieldContext?.workItems?.find((w) => w.id === mark.id || (w.drawingId === currentDrawingId && w.jointId === mark.label));
-            const isDprReported = central?.dprReported;
             const isNdtPending = central?.ndtStatus === "pending";
 
             return <button key={mark.id} className={`drawing-pin ${mark.kind === "text" ? "drawing-note" : ""} ${isComplete ? "is-complete" : "is-progress"} ${selectedId === mark.id ? "is-selected" : ""}`} style={{ left: `${mark.x*100}%`, top: `${mark.y*100}%`, transform: `translate(-50%,-50%) rotate(${-rotation}deg)` }} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setSelectedId(mark.id); setEditing(mark); }} aria-label={mark.kind === "mark" ? `${label}, ${mark.status}` : mark.label}>
-              {mark.kind === "text" ? mark.label || "Note" : <span className="drawing-pin-badge"><span className="pin-head">{isComplete ? <Check size={11}/> : "•"}<b>{label}</b></span><span className="pin-badges"><small className="pin-status">{isComplete ? "Complete" : "In Progress"}</small>{isComplete && <small className={`pin-dpr-tag ${isDprReported ? "dpr-ok" : "dpr-miss"}`}>{isDprReported ? "DPR ✓" : "DPR missing"}</small>}{isNdtPending && <small className="pin-ndt-tag">NDT pend</small>}</span></span>}
+              {mark.kind === "text" ? mark.label || "Note" : <span className="drawing-pin-badge"><span className="pin-head">{isComplete ? <Check size={11}/> : "•"}<b>{label}</b></span><span className="pin-badges"><small className="pin-status">{isComplete ? "Complete" : "In Progress"}</small>{isNdtPending && <small className="pin-ndt-tag">NDT pend</small>}</span></span>}
             </button>;
           })}
         </div>
         </div>
         {error && <div className="drawing-inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss"><X size={14}/></button></div>}
         {editing && <aside className="drawing-context-card" style={contextualStyle(editing)} onPointerDown={(event) => event.stopPropagation()}><div className="drawing-card-head"><span>{editing.kind === "mark" ? "MARK WORK ITEM" : editing.kind === "text" ? "DRAWING NOTE" : "MARKUP"}</span><button onClick={() => setEditing(null)} aria-label="Close"><X size={16}/></button></div>
-          {editing.kind === "mark" ? <><div className="drawing-card-status-bar"><p className="drawing-work-item-name">{editing.label?.trim() || "Unnamed Work Item"}</p>{editing.status === "Complete" && <span className="drawing-dpr-tag-view">{fieldContext?.workItems?.find((w) => w.id === editing.id)?.dprReported ? "DPR ✓ Reported" : "DPR missing"}</span>}</div><div className="drawing-status-label">Status (1-tap update)</div><div className="drawing-status-options"><button className={editing.status === "In Progress" ? "active" : ""} onClick={() => patchEditing({ status: "In Progress" })}>In Progress</button><button className={editing.status === "Complete" ? "active" : ""} onClick={() => patchEditing({ status: "Complete" })}><Check size={14}/>Complete</button></div><details className="drawing-work-item-details"><summary>Details &amp; NDT (optional)</summary><label>Label / Joint ID<input placeholder="Possible joint: J-017" value={editing.label ?? ""} onChange={(event) => patchEditing({ label: event.target.value })}/></label><label>Work type<select value={editing.itemType ?? "Joint"} onChange={(event) => patchEditing({ itemType: event.target.value })}><option value="Joint">Joint (Welding)</option><option value="Piping">Piping</option><option value="Structure">Structure</option><option value="Equipment">Equipment</option><option value="Tank">Tank</option><option value="Civil">Civil</option><option value="Other">Other</option></select></label><label>Line / area<input placeholder="e.g. 24-P-102" value={editing.line ?? ""} onChange={(event) => patchEditing({ line: event.target.value })}/></label><label>Crew / welder<input placeholder="e.g. Crew A, Welder 04" value={editing.crew ?? editing.welder ?? ""} onChange={(event) => patchEditing({ crew: event.target.value })}/></label></details></> : editing.kind === "text" ? <label>Note<textarea autoFocus rows={2} value={localText || editing.label || ""} onChange={(event) => setLocalText(event.target.value)} placeholder="Add a short note"/></label> : <p className="drawing-field-hint">Markup is attached to this drawing page.</p>}
+          {editing.kind === "mark" ? <><div className="drawing-card-status-bar"><p className="drawing-work-item-name">{editing.label?.trim() || "Unnamed Work Item"}</p><span className="drawing-card-tag">{editing.itemType || "Joint"}</span></div><div className="drawing-status-label">Status (1-tap update)</div><div className="drawing-status-options"><button className={editing.status === "In Progress" ? "active" : ""} onClick={() => patchEditing({ status: "In Progress" })}>In Progress</button><button className={editing.status === "Complete" ? "active" : ""} onClick={() => patchEditing({ status: "Complete" })}><Check size={14}/>Complete</button></div><details className="drawing-work-item-details"><summary>Details, Date &amp; NDT (optional)</summary><label>Work / shift date<input type="date" max={localDateKey()} value={editing.fieldDate || activeRecordDate} onChange={(event) => patchEditing({ fieldDate: event.target.value })}/></label><label>Label / Joint ID<input placeholder="Possible joint: J-017" value={editing.label ?? ""} onChange={(event) => patchEditing({ label: event.target.value })}/></label><label>Work type<select value={editing.itemType ?? "Joint"} onChange={(event) => patchEditing({ itemType: event.target.value })}><option value="Joint">Joint (Welding)</option><option value="Piping">Piping</option><option value="Structure">Structure</option><option value="Equipment">Equipment</option><option value="Tank">Tank</option><option value="Civil">Civil</option><option value="Other">Other</option></select></label><label>Line / area<input placeholder="e.g. 24-P-102" value={editing.line ?? ""} onChange={(event) => patchEditing({ line: event.target.value })}/></label><label>Crew / welder<input placeholder="e.g. Crew A, Welder 04" value={editing.crew ?? editing.welder ?? ""} onChange={(event) => patchEditing({ crew: event.target.value })}/></label></details></> : editing.kind === "text" ? <label>Note<textarea autoFocus rows={2} value={localText || editing.label || ""} onChange={(event) => setLocalText(event.target.value)} placeholder="Add a short note"/></label> : <p className="drawing-field-hint">Markup is attached to this drawing page.</p>}
           {editing.kind === "mark" && editing.history?.length ? <div className="drawing-item-history">{editing.history.slice(-4).map((entry, index) => <span key={`${entry.at}-${index}`}>{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {entry.action}</span>)}</div> : null}
           <div className="drawing-card-actions">{editing.kind === "mark" && <><button className="drawing-delete" onClick={() => { const deletedId = editing.id; commitMarks((old) => old.filter((item) => item.id !== deletedId), "Work item deleted"); void fieldContext?.deleteWorkItem(deletedId); setEditing(null); }}>Delete</button><button onClick={() => { setSelectedId(editing.id); setEditing(null); setTool("move"); setToast("Tap the new location to move this item"); }}>Move</button></>}{editing.kind !== "mark" && <button className="drawing-delete" onClick={() => { commitMarks((old) => old.filter((item) => item.id !== editing.id), "Markup deleted"); setEditing(null); }}>Delete</button>}<button className="drawing-save-mark" onClick={saveMark}>{editing.kind === "mark" ? "Done" : "Save"}</button></div>
         </aside>}
@@ -1956,5 +2144,133 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     </div>
     <nav className="drawing-mobile-nav" aria-label="Field workspace navigation"><button className={workspaceView === "drawings" ? "active" : ""} onClick={() => setWorkspaceView("drawings")}><span className="drawing-nav-dot"/>Drawings</button><button className={workspaceView === "today" ? "active" : ""} onClick={() => setWorkspaceView("today")}><span className="drawing-nav-dot"/>Today{todayItems.length > 0 && <small>{todayItems.length}</small>}</button></nav>
     {showDrawingDetails && pendingFile && <div className="drawing-modal-backdrop"><form className="drawing-details-modal" onSubmit={confirmDrawingDetails}><p className="drawing-eyebrow">NEW DRAWING</p><h2>Drawing details</h2><p className="drawing-details-file">{pendingFile.name}</p>{revisionWarning && <p className="drawing-rev-warning" role="alert"><AlertTriangle size={14}/> {revisionWarning}</p>}<label>Drawing name<input autoFocus required value={drawingName} onChange={(event) => setDrawingName(event.target.value)} placeholder="e.g. ISO-24-P-102"/></label><label>Revision <span>Optional</span><input value={revision} onChange={(event) => setRevision(event.target.value)} placeholder="e.g. Rev 03"/></label><label>Line / Area <span>Optional</span><input value={area} onChange={(event) => setArea(event.target.value)} placeholder="e.g. 24-P-102 · North rack"/></label>{detailsError && <p className="drawing-error">{detailsError}</p>}<div className="drawing-card-actions"><button type="button" onClick={() => { setShowDrawingDetails(false); setPendingFile(null); }}>Cancel</button><button type="submit" className="drawing-save-mark">Open drawing</button></div></form></div>}
+    {recordModalOpen && (
+      <div className="drawing-modal-backdrop" onClick={() => { if (!recordSubmitting) setRecordModalOpen(false); }}>
+        <form className="drawing-record-modal" onClick={(e) => e.stopPropagation()} onSubmit={(e) => void handleSaveRecordModal(e)}>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className="drawing-eyebrow">FIELD RECORD &amp; ATTACHMENT</p>
+            <button type="button" onClick={() => setRecordModalOpen(false)} disabled={recordSubmitting} aria-label="Close" className="text-[#68756c] hover:text-[#18271e]">
+              <X size={16} />
+            </button>
+          </div>
+          <h2 className="text-xl font-bold text-[#19271e] tracking-tight m-0">Add field record</h2>
+          <p className="text-xs text-[#526257] mt-1 mb-3">
+            Attach inspection photo, Excel log, DPR sheet, or report for a specific shift date.
+          </p>
+
+          {stagedRecordFiles.length > 0 && (
+            <div className="drawing-record-file-card">
+              <span className="p-2 bg-white rounded border border-[#d0ded3] text-[#286849]">
+                {recordFormType === "EXCEL" ? <FileSpreadsheet size={18} /> : recordFormType === "PHOTO" ? <Camera size={18} /> : recordFormType === "TBT" ? <ShieldCheck size={18} /> : <FileText size={18} />}
+              </span>
+              <div className="file-info">
+                <b title={stagedRecordFiles[0].name}>{stagedRecordFiles[0].name}</b>
+                <span>
+                  {(stagedRecordFiles[0].size / 1024).toFixed(0)} KB
+                  {stagedRecordFiles.length > 1 ? ` · +${stagedRecordFiles.length - 1} more file(s)` : ""}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <label className="block text-[11px] font-bold text-[#35483a]">
+              Record Type
+              <select
+                className="w-full mt-1 px-2.5 py-2 text-xs border border-[#dce3dc] rounded bg-white text-[#25352a]"
+                value={recordFormType}
+                onChange={(e) => setRecordFormType(e.target.value as RecordUploadType)}
+              >
+                <option value="PHOTO">📷 Site Inspection / Quality Photo</option>
+                <option value="EXCEL">📊 Excel / Spreadsheet (.xlsx, .xls, .csv)</option>
+                <option value="DPR">📋 Daily Progress Report (DPR Sheet / Scan)</option>
+                <option value="TBT">🛡️ Toolbox Talk (TBT) / Safety Record</option>
+                <option value="DOCUMENT">📄 Field Document / Test Certificate / Report</option>
+                <option value="DRAWING">📐 Drawing Sheet / Revision</option>
+              </select>
+            </label>
+
+            <label className="block text-[11px] font-bold text-[#35483a]">
+              Record / Shift Date (can backdate to previous day)
+              <input
+                type="date"
+                required
+                className="w-full mt-1 px-2.5 py-2 text-xs border border-[#dce3dc] rounded bg-white text-[#25352a]"
+                value={recordFormDate}
+                max={localDateKey()}
+                onChange={(e) => setRecordFormDate(e.target.value)}
+              />
+              <div className="drawing-date-quick-bar">
+                <button
+                  type="button"
+                  className={`drawing-date-chip-btn ${recordFormDate === localDateKey() ? "active" : ""}`}
+                  onClick={() => setRecordFormDate(localDateKey())}
+                >
+                  Today ({localDateKey().slice(5)})
+                </button>
+                <button
+                  type="button"
+                  className={`drawing-date-chip-btn ${recordFormDate === getYesterdayDateKey() ? "active" : ""}`}
+                  onClick={() => setRecordFormDate(getYesterdayDateKey())}
+                >
+                  Yesterday ({getYesterdayDateKey().slice(5)})
+                </button>
+              </div>
+            </label>
+
+            <label className="block text-[11px] font-bold text-[#35483a]">
+              Title / Description
+              <input
+                type="text"
+                required
+                className="w-full mt-1 px-2.5 py-2 text-xs border border-[#dce3dc] rounded bg-white text-[#25352a]"
+                placeholder="e.g. Joint J-017 Visual Inspection / Daily Weld Register"
+                value={recordFormTitle}
+                onChange={(e) => setRecordFormTitle(e.target.value)}
+              />
+            </label>
+
+            <label className="block text-[11px] font-bold text-[#35483a]">
+              Attach to Joint / Work Item <span className="font-normal text-[#75867b]">(Optional)</span>
+              <input
+                type="text"
+                className="w-full mt-1 px-2.5 py-2 text-xs border border-[#dce3dc] rounded bg-white text-[#25352a]"
+                placeholder="e.g. J-017 or leave empty for general drawing attachment"
+                value={recordFormWorkItem}
+                onChange={(e) => setRecordFormWorkItem(e.target.value)}
+              />
+            </label>
+
+            <label className="block text-[11px] font-bold text-[#35483a]">
+              Notes / Remarks <span className="font-normal text-[#75867b]">(Optional)</span>
+              <textarea
+                rows={2}
+                className="w-full mt-1 px-2.5 py-2 text-xs border border-[#dce3dc] rounded bg-white text-[#25352a]"
+                placeholder="Add observations, welder ID, WPS reference..."
+                value={recordFormNotes}
+                onChange={(e) => setRecordFormNotes(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div className="drawing-card-actions mt-5">
+            <button
+              type="button"
+              disabled={recordSubmitting}
+              onClick={() => { setRecordModalOpen(false); setStagedRecordFiles([]); }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={recordSubmitting}
+              className="drawing-save-mark flex items-center justify-center gap-1.5"
+            >
+              {recordSubmitting ? <><EpcxSpinner size="sm" inline /> Saving…</> : "Save & Attach Record"}
+            </button>
+          </div>
+        </form>
+      </div>
+    )}
   </main>;
 }
