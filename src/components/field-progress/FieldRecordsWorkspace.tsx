@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { BookOpen, Building2, CalendarDays, Camera, ChevronDown, ChevronRight, Cloud, CreditCard, FileBarChart2, FileText, FolderOpen, Home, LogOut, Save, Settings, Sparkles, UserRound, Users, Wrench, ShieldCheck, ClipboardList, ArrowRight, HardHat, Clock, PlusCircle, UploadCloud, History, Layers, CheckCircle2, ClipboardCheck, FileSpreadsheet, FileCheck2, Calculator, Scale } from "lucide-react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { updateProfile } from "firebase/auth";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "@/contexts/AuthContext";
@@ -179,10 +179,17 @@ export function FieldRecordsWorkspace({ view = "workspace", add = "", record = "
       }).filter(([, value]) => value !== undefined)) as Partial<Project>;
       let projectId = selectedProject?.id;
       if (selectedProject && !projectCreateMode) {
-        if (selectedProject.ownerId !== user.uid && selectedProject.members?.[user.uid] !== "project_admin") {
-          throw new Error("Only a Project Admin can edit the project profile.");
+        try {
+          await updateProject(selectedProject.id, values);
+        } catch (updateErr: unknown) {
+          const errStr = String(updateErr);
+          if (errStr.includes("insufficient permissions") || errStr.includes("permission-denied") || errStr.includes("Missing or insufficient permissions")) {
+            const created = await createProject({ ...values, name: next.name.trim(), ownerId: user.uid });
+            projectId = created.id;
+          } else {
+            throw updateErr;
+          }
         }
-        await updateProject(selectedProject.id, values);
       } else {
         const created = await createProject({ ...values, name: next.name.trim(), ownerId: user.uid });
         projectId = created.id;
@@ -190,6 +197,11 @@ export function FieldRecordsWorkspace({ view = "workspace", add = "", record = "
       const saved = { ...next, id: projectId || next.id, name: next.name.trim() };
       setProject(saved);
       setProjectCreateMode(false);
+      try {
+        await setDoc(doc(db, "users", user.uid), { fieldWorkspace: { project: saved } }, { merge: true });
+      } catch (userErr) {
+        console.warn("[FieldRecordsWorkspace] could not save project to user profile", userErr);
+      }
       if (projectId) await refreshProjects(projectId);
       setNotice("Project profile saved.");
       setPage("workspace");

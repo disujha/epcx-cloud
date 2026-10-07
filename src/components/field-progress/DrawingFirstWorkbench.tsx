@@ -1527,7 +1527,7 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
         if (!id) return null;
         const active = id === currentDrawingId;
         const thumb = resolveDrawingThumbnail(snapshot, drawingThumbnails, user?.uid, currentDrawingId, url, failedThumbs);
-        return <button key={id} className={`drawing-library-item ${active ? "active" : ""}`} onClick={() => void openDrawing(id)}>
+        return <button key={id} className={`drawing-library-item ${active ? "active" : ""}`} onClick={() => { setWorkspaceView("drawings"); void openDrawing(id); }}>
           <span className="drawing-library-thumb">
             {thumb ? (
               <img src={thumb} alt="" onError={() => handleThumbnailError(id, thumb)} />
