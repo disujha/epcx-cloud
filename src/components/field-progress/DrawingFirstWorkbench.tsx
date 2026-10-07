@@ -127,6 +127,44 @@ async function generateImageThumbnailFromFile(file: File | Blob): Promise<string
   });
 }
 
+async function generateImageThumbnailFromUrl(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const targetWidth = 320;
+          const scale = Math.min(1, targetWidth / Math.max(1, img.naturalWidth));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.naturalWidth * scale);
+          canvas.height = Math.round(img.naturalHeight * scale);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { resolve(url); return; }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.72));
+        } catch {
+          resolve(url);
+        }
+      };
+      img.onerror = () => resolve(url);
+      img.src = url;
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function sanitizeForFirestore<T extends Record<string, unknown>>(data: T): Record<string, unknown> {
+  const clean: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
+
 function isPdfDrawingSnapshot(snapshot: Record<string, unknown>) {
   const mime = String(snapshot.mimeType ?? snapshot.contentType ?? "").toLowerCase();
   const fileName = String(snapshot.fileName ?? "").toLowerCase();
@@ -211,7 +249,7 @@ function persistenceErrorMessage(reason: unknown, stage = "") {
 function logPersistenceFailure(stage: string, uid: string, file: File, drawingId: string, reason: unknown, contentType?: string) {
   if (process.env.NODE_ENV !== "development") return;
   const activeUser = auth.currentUser;
-  console.error("[EPCX Field Progress persistence]", {
+  console.warn("[EPCX Field Progress persistence]", {
     stage,
     projectId: auth.app.options.projectId,
     storageBucket: storage.app.options.storageBucket,
@@ -224,6 +262,7 @@ function logPersistenceFailure(stage: string, uid: string, file: File, drawingId
     fileSizeBytes: file.size,
     errorCode: persistenceErrorCode(reason) || "unknown",
     errorMessage: reason instanceof Error ? reason.message : String(reason),
+    reason,
   });
 }
 
@@ -414,7 +453,7 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
         const synced = { ...row.snapshot, contentType, mimeType: contentType, storagePath: drawingStoragePath(ownerUid, row.id), downloadURL, storagePending: false, updatedAt: new Date().toISOString() };
         const pendingEvents = (row.snapshot as Record<string, unknown>).workEvents;
         await appendCloudWorkEvents(ownerUid, row.id, Array.isArray(pendingEvents) ? pendingEvents as WorkEvent[] : []);
-        await setDoc(doc(db, "users", ownerUid, "fieldDrawings", row.id), synced, { merge: true });
+        await setDoc(doc(db, "users", ownerUid, "fieldDrawings", row.id), sanitizeForFirestore(synced), { merge: true });
         await localDrawingStore(`${ownerUid}:${row.id}`, { file: row.file, snapshot: synced });
         setDrawingSessions((current) => ({ ...current, [row.id]: synced }));
       } catch { /* Leave failed records marked pending for the next online retry. */ }
@@ -443,11 +482,13 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
           thumb = isPdf(sourceFile)
             ? await generatePdfThumbnailFromFile(sourceFile)
             : await generateImageThumbnailFromFile(sourceFile);
-        } else if (typeof snapshot.downloadURL === "string" && snapshot.downloadURL && isPdfDrawingSnapshot(snapshot)) {
-          thumb = await generatePdfThumbnailFromUrl(snapshot.downloadURL);
-        } else if (navigator.onLine && typeof snapshot.storagePath === "string") {
+        }
+
+        // Try downloading source via Firebase Storage SDK to reliably bypass browser CORS blocks
+        const storagePath = (typeof snapshot.storagePath === "string" && snapshot.storagePath) || drawingStoragePath(user.uid, id);
+        if (!thumb && navigator.onLine) {
           try {
-            sourceFile = await downloadDocument(snapshot.storagePath);
+            sourceFile = await downloadDocument(storagePath);
             if (sourceFile) {
               await localDrawingStore(`${user.uid}:${id}`, { file: sourceFile, snapshot });
               thumb = isPdf(sourceFile)
@@ -457,8 +498,17 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
           } catch { /* downloadDocument failed */ }
         }
 
+        // Fallback to generating from downloadURL if available
+        if (!thumb && typeof snapshot.downloadURL === "string" && snapshot.downloadURL) {
+          if (isPdfDrawingSnapshot(snapshot)) {
+            thumb = await generatePdfThumbnailFromUrl(snapshot.downloadURL);
+          } else {
+            thumb = await generateImageThumbnailFromUrl(snapshot.downloadURL);
+          }
+        }
+
         if (thumb) {
-          localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${id}`, thumb);
+          try { localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${id}`, thumb); } catch { /* noop */ }
           setDrawingThumbnails((prev) => ({ ...prev, [id]: thumb }));
           setDrawingSessions((prev) => prev[id] ? ({ ...prev, [id]: { ...prev[id], thumbnail: thumb } }) : prev);
           if (navigator.onLine) {
@@ -468,7 +518,6 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       } catch (e) {
         console.warn("Could not generate thumbnail for drawing", id, e);
       }
-      // The id stays in generatingThumbnails so a failing source is not retried in a loop this session.
     })();
   }, [user, drawingThumbnails, failedThumbs]);
 
@@ -626,15 +675,25 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
             const local = sessions[id];
             const remoteIsNewer = !local || String(remote.updatedAt ?? "") > String(local.updatedAt ?? "");
             const merged = remoteIsNewer ? { ...local, ...remote } : { ...remote, ...local };
+            const remoteThumb = typeof remote.thumbnail === "string" && remote.thumbnail ? remote.thumbnail : undefined;
+            const localThumb = typeof local?.thumbnail === "string" && local.thumbnail ? local.thumbnail : undefined;
+            const resolvedThumb = remoteThumb || localThumb;
+            if (resolvedThumb) {
+              initialThumbs[id] = resolvedThumb;
+              try { localStorage.setItem(`epcx-drawing-thumb:${activeUser.uid}:${id}`, resolvedThumb); } catch { /* noop */ }
+            }
             sessions[id] = {
               ...merged,
               id,
-              thumbnail: (typeof remote.thumbnail === "string" && remote.thumbnail) || (typeof local?.thumbnail === "string" && local.thumbnail) || undefined,
+              thumbnail: resolvedThumb,
               downloadURL: (typeof remote.downloadURL === "string" && remote.downloadURL) || (typeof local?.downloadURL === "string" && local.downloadURL) || undefined,
               storagePath: (typeof remote.storagePath === "string" && remote.storagePath) || (typeof local?.storagePath === "string" && local.storagePath) || undefined,
             };
-            if (typeof remote.downloadURL === "string" && remote.downloadURL) localStorage.setItem(`epcx-drawing-cloud:${activeUser.uid}:${id}`, remote.downloadURL);
+            if (typeof remote.downloadURL === "string" && remote.downloadURL) {
+              try { localStorage.setItem(`epcx-drawing-cloud:${activeUser.uid}:${id}`, remote.downloadURL); } catch { /* noop */ }
+            }
           }
+          setDrawingThumbnails((prev) => ({ ...initialThumbs, ...prev }));
           setDrawingSessions({ ...sessions });
           // 2. Merge work events per drawing; one failing lookup must not drop the remaining drawings.
           await Promise.all(remoteDocs.map(async ({ id }) => {
@@ -757,16 +816,64 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       try {
         const detectedType = await detectDrawingContentType(file);
         if (!detectedType) throw Object.assign(new Error("Unsupported or mismatched file content."), { code: "field-progress/unsupported-file" });
-        const cachedThumb = localStorage.getItem(`epcx-drawing-thumb:${user.uid}:${drawingId}`) || drawingThumbnails[drawingId] || undefined;
-        const snapshot = { id: drawingId, ownerUid: user.uid, name: drawingName.trim() || file.name.replace(/\.[^.]+$/, ""), revision: revision.trim(), area: area.trim(), fileName: file.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(user.uid, drawingId), projectId: project?.id || null, projectName: project?.name || "", page, pageCount: contentType === "application/pdf" ? pages : 1, zoom, rotation, marks, workItems: marks.filter((mark) => mark.kind === "mark").map((mark) => ({ ...mark, ownerUid: user.uid, drawingId, pageIndex: mark.page, annotationId: mark.id, createdAt: mark.createdAt ?? savedAt, updatedAt: mark.updatedAt ?? savedAt })), workEvents, thumbnail: cachedThumb, createdAt, updatedAt: savedAt, storagePending: true };
+        contentType = detectedType;
+        let cachedThumb = localStorage.getItem(`epcx-drawing-thumb:${user.uid}:${drawingId}`) || drawingThumbnails[drawingId] || undefined;
+        if (!cachedThumb && file) {
+          try {
+            const generated = isPdf(file)
+              ? await generatePdfThumbnailFromFile(file)
+              : await generateImageThumbnailFromFile(file);
+            if (generated) {
+              cachedThumb = generated;
+              try { localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${drawingId}`, generated); } catch { /* noop */ }
+              setDrawingThumbnails((prev) => ({ ...prev, [drawingId]: generated }));
+            }
+          } catch { /* thumbnail generation fallback */ }
+        }
+        const snapshot = {
+          id: drawingId,
+          ownerUid: user.uid,
+          name: drawingName.trim() || file.name.replace(/\.[^.]+$/, ""),
+          revision: revision.trim(),
+          area: area.trim(),
+          fileName: file.name,
+          contentType,
+          mimeType: contentType,
+          drawingType: contentType === "application/pdf" ? "pdf" : "image",
+          storagePath: drawingStoragePath(user.uid, drawingId),
+          projectId: project?.id || null,
+          projectName: project?.name || "",
+          page,
+          pageCount: contentType === "application/pdf" ? pages : 1,
+          zoom,
+          rotation,
+          marks,
+          workItems: marks.filter((mark) => mark.kind === "mark").map((mark) => ({
+            ...mark,
+            ownerUid: user.uid,
+            drawingId,
+            pageIndex: mark.page,
+            annotationId: mark.id,
+            createdAt: mark.createdAt ?? savedAt,
+            updatedAt: mark.updatedAt ?? savedAt,
+          })),
+          workEvents,
+          thumbnail: cachedThumb,
+          createdAt,
+          updatedAt: savedAt,
+          storagePending: true,
+        };
         stage = "local recovery";
         await localDrawingStore(`${user.uid}:${drawingId}`, { file, snapshot });
         localStorage.setItem(`epcx-drawing-session:${user.uid}`, JSON.stringify(snapshot));
         if (!navigator.onLine) { setSyncState("offline"); return; }
         const cloudKey = `epcx-drawing-cloud:${user.uid}:${drawingId}`;
-        if (!localStorage.getItem(cloudKey)) setSyncState("uploading");
-        stage = "Storage upload";
-        const downloadURL = await ensureCloudDrawing(file, user.uid, drawingId);
+        let downloadURL = localStorage.getItem(cloudKey) || (typeof drawingSessions[drawingId]?.downloadURL === "string" ? String(drawingSessions[drawingId]?.downloadURL) : "");
+        if (!downloadURL) {
+          setSyncState("uploading");
+          stage = "Storage upload";
+          downloadURL = await ensureCloudDrawing(file, user.uid, drawingId);
+        }
         const latestThumb = localStorage.getItem(`epcx-drawing-thumb:${user.uid}:${drawingId}`) || drawingThumbnails[drawingId] || cachedThumb || undefined;
         const storedPending = { ...snapshot, downloadURL, thumbnail: latestThumb, storagePending: true };
         localStorage.setItem(`epcx-drawing-session:${user.uid}`, JSON.stringify(storedPending));
@@ -774,14 +881,19 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
         const synced = { ...storedPending, thumbnail: latestThumb, storagePending: false };
         stage = "Firestore metadata";
         await appendCloudWorkEvents(user.uid, drawingId, workEvents);
-        await setDoc(doc(db, "users", user.uid, "fieldDrawings", drawingId), synced, { merge: true });
+        await setDoc(doc(db, "users", user.uid, "fieldDrawings", drawingId), sanitizeForFirestore(synced), { merge: true });
         stage = "local recovery";
         localStorage.setItem(`epcx-drawing-session:${user.uid}`, JSON.stringify(synced));
         await localDrawingStore(`${user.uid}:${drawingId}`, { file, snapshot: synced });
         setDrawingSessions((current) => ({ ...current, [drawingId]: synced }));
         setSaved(true);
         setSyncState("synced");
-      } catch (reason) { logPersistenceFailure(stage, user.uid, file, drawingId, reason, contentType); setSyncState("failed"); setToast(persistenceErrorMessage(reason, stage)); window.setTimeout(() => setToast(""), 4200); }
+      } catch (reason) {
+        logPersistenceFailure(stage, user.uid, file, drawingId, reason, contentType);
+        setSyncState("failed");
+        setToast(persistenceErrorMessage(reason, stage));
+        window.setTimeout(() => setToast(""), 4200);
+      }
     }, 650);
     return () => window.clearTimeout(timer);
   }, [file, user, marks, workEvents, drawingName, revision, area, page, pages, zoom, rotation]);
@@ -827,9 +939,12 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
               const thumbUrl = thumbCanvas.toDataURL("image/jpeg", 0.72);
               const activeId = localStorage.getItem(`epcx-current-drawing:${user?.uid ?? ""}`) || currentDrawingId;
               if (activeId && user?.uid) {
-                localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${activeId}`, thumbUrl);
+                try { localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${activeId}`, thumbUrl); } catch { /* noop */ }
                 setDrawingThumbnails((prev) => ({ ...prev, [activeId]: thumbUrl }));
                 setDrawingSessions((prev) => prev[activeId] ? ({ ...prev, [activeId]: { ...prev[activeId], thumbnail: thumbUrl } }) : prev);
+                if (navigator.onLine) {
+                  void setDoc(doc(db, "users", user.uid, "fieldDrawings", activeId), { thumbnail: thumbUrl }, { merge: true });
+                }
               }
             }
           } catch { /* non-blocking */ }
@@ -883,11 +998,16 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     setCurrentDrawingId(drawingId);
     localStorage.setItem(`epcx-current-drawing:${user.uid}`, drawingId);
     const isPdfFile = isPdf(next);
-    void (isPdfFile ? generatePdfThumbnailFromFile(next) : generateImageThumbnailFromFile(next)).then((thumb) => {
+    void (isPdfFile ? generatePdfThumbnailFromFile(next) : generateImageThumbnailFromFile(next)).then(async (thumb) => {
       if (thumb && user?.uid) {
-        localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${drawingId}`, thumb);
+        try { localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${drawingId}`, thumb); } catch { /* noop */ }
         setDrawingThumbnails((prev) => ({ ...prev, [drawingId]: thumb }));
         setDrawingSessions((prev) => prev[drawingId] ? ({ ...prev, [drawingId]: { ...prev[drawingId], thumbnail: thumb } }) : prev);
+        if (navigator.onLine) {
+          try {
+            await setDoc(doc(db, "users", user.uid, "fieldDrawings", drawingId), { thumbnail: thumb, updatedAt: new Date().toISOString() }, { merge: true });
+          } catch { /* offline / retryable */ }
+        }
       }
     });
     const createdAt = new Date().toISOString();
@@ -965,24 +1085,28 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     try {
       const localFile = (await localDrawingStore(`${user.uid}:${drawingId}`))?.file ?? (await localDrawingList(user.uid)).find((row) => row.id === drawingId)?.file;
       let source = localFile;
-      if (!source && typeof snapshot.storagePath === "string" && navigator.onLine) {
-        source = await downloadDocument(snapshot.storagePath);
-        await localDrawingStore(`${user.uid}:${drawingId}`, { file: source, snapshot });
+      const storagePath = (typeof snapshot.storagePath === "string" && snapshot.storagePath) || drawingStoragePath(user.uid, drawingId);
+      if (!source && navigator.onLine) {
+        try {
+          source = await downloadDocument(storagePath);
+          await localDrawingStore(`${user.uid}:${drawingId}`, { file: source, snapshot });
+        } catch { /* offline fallback */ }
       }
       if (!source) { setError("This drawing is not available offline yet. Reconnect and try again."); return; }
       const priorId = localStorage.getItem(`epcx-current-drawing:${user.uid}`);
       if (priorId && fileRef.current) {
         const timestamp = new Date().toISOString();
         const contentType = await detectDrawingContentType(fileRef.current);
-        const priorSnapshot = { ...(drawingSessions[priorId] ?? {}), id: priorId, ownerUid: user.uid, name: drawingName, revision, area, fileName: fileRef.current.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(user.uid, priorId), projectId: project?.id || null, projectName: project?.name || "", marks, workItems: marks.filter((mark) => mark.kind === "mark").map((mark) => ({ ...mark, ownerUid: user.uid, drawingId: priorId, pageIndex: mark.page })), workEvents, page, pageCount: pages, zoom, rotation, updatedAt: timestamp, storagePending: true };
+        const priorThumb = localStorage.getItem(`epcx-drawing-thumb:${user.uid}:${priorId}`) || drawingThumbnails[priorId] || undefined;
+        const priorSnapshot = { ...(drawingSessions[priorId] ?? {}), id: priorId, ownerUid: user.uid, name: drawingName, revision, area, fileName: fileRef.current.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(user.uid, priorId), projectId: project?.id || null, projectName: project?.name || "", marks, workItems: marks.filter((mark) => mark.kind === "mark").map((mark) => ({ ...mark, ownerUid: user.uid, drawingId: priorId, pageIndex: mark.page })), workEvents, page, pageCount: pages, zoom, rotation, thumbnail: priorThumb, updatedAt: timestamp, storagePending: true };
         await localDrawingStore(`${user.uid}:${priorId}`, { file: fileRef.current, snapshot: priorSnapshot });
         setDrawingSessions((current) => ({ ...current, [priorId]: priorSnapshot }));
         if (navigator.onLine && contentType) {
           try {
             const downloadURL = await ensureCloudDrawing(fileRef.current, user.uid, priorId);
-            const synced = { ...priorSnapshot, downloadURL, storagePending: false };
+            const synced = { ...priorSnapshot, downloadURL, thumbnail: priorThumb, storagePending: false };
             await appendCloudWorkEvents(user.uid, priorId, workEvents);
-            await setDoc(doc(db, "users", user.uid, "fieldDrawings", priorId), synced, { merge: true });
+            await setDoc(doc(db, "users", user.uid, "fieldDrawings", priorId), sanitizeForFirestore(synced), { merge: true });
             await localDrawingStore(`${user.uid}:${priorId}`, { file: fileRef.current, snapshot: synced });
             setDrawingSessions((current) => ({ ...current, [priorId]: synced }));
           } catch { /* The local drawing remains available and will retry when connectivity returns. */ }
@@ -1224,8 +1348,21 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       const detectedType = await detectDrawingContentType(source);
       if (!detectedType) throw Object.assign(new Error("Unsupported or mismatched file content."), { code: "field-progress/unsupported-file" });
       contentType = detectedType;
+      let cachedThumb = localStorage.getItem(`epcx-drawing-thumb:${owner.uid}:${drawingId}`) || drawingThumbnails[drawingId] || undefined;
+      if (!cachedThumb && source) {
+        try {
+          const generated = isPdf(source)
+            ? await generatePdfThumbnailFromFile(source)
+            : await generateImageThumbnailFromFile(source);
+          if (generated) {
+            cachedThumb = generated;
+            try { localStorage.setItem(`epcx-drawing-thumb:${owner.uid}:${drawingId}`, generated); } catch { /* noop */ }
+            setDrawingThumbnails((prev) => ({ ...prev, [drawingId]: generated }));
+          }
+        } catch { /* thumbnail generation fallback */ }
+      }
       const workItems = marks.filter((mark) => mark.kind === "mark").map((mark) => ({ ...mark, ownerUid: owner.uid, drawingId, annotationId: mark.id, createdAt: mark.createdAt ?? savedAt, updatedAt: mark.updatedAt ?? savedAt }));
-      const snapshot = { id: drawingId, ownerUid: owner.uid, name: drawingName.trim() || source.name.replace(/\.[^.]+$/, ""), revision: revision.trim(), area: area.trim(), fileName: source.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(owner.uid, drawingId), projectId: project?.id || null, projectName: project?.name || "", page, pageCount: contentType === "application/pdf" ? pages : 1, zoom, rotation, marks, workItems: workItems.map((item) => ({ ...item, pageIndex: item.page })), workEvents, createdAt, updatedAt: savedAt, relatedRecords: [] as string[] };
+      const snapshot = { id: drawingId, ownerUid: owner.uid, name: drawingName.trim() || source.name.replace(/\.[^.]+$/, ""), revision: revision.trim(), area: area.trim(), fileName: source.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(owner.uid, drawingId), projectId: project?.id || null, projectName: project?.name || "", page, pageCount: contentType === "application/pdf" ? pages : 1, zoom, rotation, marks, workItems: workItems.map((item) => ({ ...item, pageIndex: item.page })), workEvents, thumbnail: cachedThumb, createdAt, updatedAt: savedAt, relatedRecords: [] as string[] };
       stage = "local recovery";
       const pendingSnapshot = { ...snapshot, storagePending: true };
       localStorage.setItem(`epcx-drawing-session:${owner.uid}`, JSON.stringify(pendingSnapshot));
@@ -1233,10 +1370,11 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       if (!navigator.onLine) { setSyncState("offline"); return; }
       stage = "Storage upload";
       const downloadURL = await ensureCloudDrawing(source, owner.uid, drawingId);
-      const savedSnapshot = { ...snapshot, downloadURL, storagePending: false };
+      const latestThumb = localStorage.getItem(`epcx-drawing-thumb:${owner.uid}:${drawingId}`) || drawingThumbnails[drawingId] || cachedThumb || undefined;
+      const savedSnapshot = { ...snapshot, downloadURL, thumbnail: latestThumb, storagePending: false };
       stage = "Firestore metadata";
       await appendCloudWorkEvents(owner.uid, drawingId, workEvents);
-      await setDoc(doc(db, "users", owner.uid, "fieldDrawings", drawingId), savedSnapshot, { merge: true });
+      await setDoc(doc(db, "users", owner.uid, "fieldDrawings", drawingId), sanitizeForFirestore(savedSnapshot), { merge: true });
       stage = "local recovery";
       localStorage.setItem(`epcx-drawing-session:${owner.uid}`, JSON.stringify(savedSnapshot));
       await localDrawingStore(`${owner.uid}:${drawingId}`, { file: source, snapshot: savedSnapshot });
