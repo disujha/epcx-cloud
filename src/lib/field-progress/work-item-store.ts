@@ -144,6 +144,23 @@ export async function listCentralWorkItems(uid: string, projectId?: string): Pro
   return cached || [];
 }
 
+function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) return data;
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeForFirestore(item)).filter((item) => item !== undefined) as unknown as T;
+  }
+  if (typeof data === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (value !== undefined) {
+        result[key] = sanitizeForFirestore(value);
+      }
+    }
+    return result as T;
+  }
+  return data;
+}
+
 export async function saveCentralWorkItem(uid: string, item: CentralWorkItem): Promise<void> {
   if (!uid) return;
   const now = new Date().toISOString();
@@ -165,7 +182,7 @@ export async function saveCentralWorkItem(uid: string, item: CentralWorkItem): P
   if (navigator.onLine) {
     try {
       const docRef = doc(db, "users", uid, "fieldWorkItems", toSave.id);
-      await setDoc(docRef, toSave, { merge: true });
+      await setDoc(docRef, sanitizeForFirestore(toSave), { merge: true });
 
       // If tied to a drawing, also update the drawing's workItems/marks array for backward compatibility
       if (toSave.drawingId) {
@@ -183,7 +200,7 @@ export async function saveCentralWorkItem(uid: string, item: CentralWorkItem): P
               line: toSave.lineId,
               updatedAt: now,
             };
-            await setDoc(drawingRef, { marks, updatedAt: now }, { merge: true });
+            await setDoc(drawingRef, sanitizeForFirestore({ marks, updatedAt: now }), { merge: true });
           }
         }
       }
@@ -213,7 +230,7 @@ export async function saveCentralWorkItemsBulk(uid: string, items: CentralWorkIt
         const batch = writeBatch(db);
         for (const item of prepared.slice(i, i + 400)) {
           const ref = doc(db, "users", uid, "fieldWorkItems", item.id);
-          batch.set(ref, item, { merge: true });
+          batch.set(ref, sanitizeForFirestore(item), { merge: true });
         }
         await batch.commit();
       }
@@ -336,7 +353,7 @@ export async function saveDprRecord(uid: string, dpr: DprRecordData): Promise<vo
         updatedAt: now,
       };
 
-      await setDoc(docRef, firestorePayload, { merge: true });
+      await setDoc(docRef, sanitizeForFirestore(firestorePayload), { merge: true });
     } catch (err) {
       console.error("Failed to save DPR record to Firestore", err);
     }
@@ -353,7 +370,7 @@ export async function saveReconciliationRecord(uid: string, summary: Reconciliat
   if (navigator.onLine) {
     try {
       const ref = doc(db, "users", uid, "reconciliations", summary.date);
-      await setDoc(ref, summary, { merge: true });
+      await setDoc(ref, sanitizeForFirestore(summary), { merge: true });
     } catch (err) {
       console.warn("Could not save reconciliation to Firestore", err);
     }

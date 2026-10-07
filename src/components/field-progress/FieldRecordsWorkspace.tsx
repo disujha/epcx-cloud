@@ -51,6 +51,12 @@ export function FieldRecordsWorkspace({ view = "workspace", add = "", record = "
   const [projectSaving, setProjectSaving] = useState(false);
   const [projectCreateMode, setProjectCreateMode] = useState(false);
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [accountOpen, setAccountOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [activeNavDropdown, setActiveNavDropdown] = useState<Page | null>(null);
@@ -782,7 +788,44 @@ export function FieldRecordsWorkspace({ view = "workspace", add = "", record = "
         </div>
       </div>
     </header>
-    {notice&&<div className="field-app-notice" role="status"><span>{notice}</span>{notice.includes("allowance reached")&&<Link href="/pricing">View plans</Link>}<button onClick={() => setNotice("")}>Dismiss</button></div>}
+    {notice && (
+      <aside className="field-app-notice-overlay" aria-live="polite">
+        <div
+          className={`field-app-notice ${
+            notice.toLowerCase().includes("could not") ||
+            notice.toLowerCase().includes("error") ||
+            notice.toLowerCase().includes("permission")
+              ? "danger"
+              : ""
+          }`}
+          role="status"
+        >
+          <span className="field-app-notice-icon">
+            {notice.toLowerCase().includes("could not") ||
+            notice.toLowerCase().includes("error") ||
+            notice.toLowerCase().includes("permission") ? (
+              <span className="notice-chip-dot danger" />
+            ) : (
+              <CheckCircle2 size={16} className="notice-chip-icon-success" />
+            )}
+          </span>
+          <span className="field-app-notice-text">{notice}</span>
+          {notice.includes("allowance reached") && (
+            <Link href="/pricing" className="field-app-notice-link">
+              View plans
+            </Link>
+          )}
+          <button
+            type="button"
+            className="field-app-notice-dismiss"
+            onClick={() => setNotice("")}
+            aria-label="Dismiss notification"
+          >
+            Dismiss
+          </button>
+        </div>
+      </aside>
+    )}
     <div className="field-records-panel" key={page}>
       <FieldWorkProvider currentProjectId={workspaceProject.id || undefined}>
         {page === "workspace" && <FieldWorkspaceHome {...pageProps}/>}

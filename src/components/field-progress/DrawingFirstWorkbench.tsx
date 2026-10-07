@@ -538,13 +538,13 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
         const existingCentral = fieldContext?.workItems.find((w) => w.id === m.id);
         const centralItem: CentralWorkItem = {
           id: m.id,
-          projectId: project?.id,
-          projectName: project?.name,
+          projectId: project?.id || "",
+          projectName: project?.name || "",
           fieldDate: (m.createdAt || now).slice(0, 10),
           discipline: (m.itemType?.toLowerCase() as WorkType) || "piping",
-          drawingId: drawingId || undefined,
+          drawingId: drawingId || "",
           drawingName: currentDrawingName,
-          drawingRevision: revision || undefined,
+          drawingRevision: revision || "",
           drawingLocation: { x: m.x, y: m.y, page: m.page },
           lineId: m.line || "",
           jointId: m.label || "",
@@ -556,14 +556,14 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
           createdFrom: "drawing",
           sourceRecordId: m.id,
           dprReported: Boolean(existingCentral?.dprReported),
-          dprId: existingCentral?.dprId,
-          dprDate: existingCentral?.dprDate,
-          crew: m.crew,
-          welder: m.welder,
-          remarks: m.crew ? `Crew: ${m.crew}` : undefined,
+          dprId: existingCentral?.dprId || "",
+          dprDate: existingCentral?.dprDate || "",
+          crew: m.crew || "",
+          welder: m.welder || "",
+          remarks: m.crew ? `Crew: ${m.crew}` : "",
           needsIdentification: !m.label || m.label.startsWith("WI-"),
-          photos: existingCentral?.photos,
-          documents: existingCentral?.documents,
+          photos: existingCentral?.photos || [],
+          documents: existingCentral?.documents || [],
           history: [
             ...(existingCentral?.history || []),
             {
@@ -1095,21 +1095,25 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       if (!source) { setError("This drawing is not available offline yet. Reconnect and try again."); return; }
       const priorId = localStorage.getItem(`epcx-current-drawing:${user.uid}`);
       if (priorId && fileRef.current) {
-        const timestamp = new Date().toISOString();
-        const contentType = await detectDrawingContentType(fileRef.current);
-        const priorThumb = localStorage.getItem(`epcx-drawing-thumb:${user.uid}:${priorId}`) || drawingThumbnails[priorId] || undefined;
-        const priorSnapshot = { ...(drawingSessions[priorId] ?? {}), id: priorId, ownerUid: user.uid, name: drawingName, revision, area, fileName: fileRef.current.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(user.uid, priorId), projectId: project?.id || null, projectName: project?.name || "", marks, workItems: marks.filter((mark) => mark.kind === "mark").map((mark) => ({ ...mark, ownerUid: user.uid, drawingId: priorId, pageIndex: mark.page })), workEvents, page, pageCount: pages, zoom, rotation, thumbnail: priorThumb, updatedAt: timestamp, storagePending: true };
-        await localDrawingStore(`${user.uid}:${priorId}`, { file: fileRef.current, snapshot: priorSnapshot });
-        setDrawingSessions((current) => ({ ...current, [priorId]: priorSnapshot }));
-        if (navigator.onLine && contentType) {
-          try {
-            const downloadURL = await ensureCloudDrawing(fileRef.current, user.uid, priorId);
-            const synced = { ...priorSnapshot, downloadURL, thumbnail: priorThumb, storagePending: false };
-            await appendCloudWorkEvents(user.uid, priorId, workEvents);
-            await setDoc(doc(db, "users", user.uid, "fieldDrawings", priorId), sanitizeForFirestore(synced), { merge: true });
-            await localDrawingStore(`${user.uid}:${priorId}`, { file: fileRef.current, snapshot: synced });
-            setDrawingSessions((current) => ({ ...current, [priorId]: synced }));
-          } catch { /* The local drawing remains available and will retry when connectivity returns. */ }
+        try {
+          const timestamp = new Date().toISOString();
+          const contentType = await detectDrawingContentType(fileRef.current);
+          const priorThumb = localStorage.getItem(`epcx-drawing-thumb:${user.uid}:${priorId}`) || drawingThumbnails[priorId] || undefined;
+          const priorSnapshot = { ...(drawingSessions[priorId] ?? {}), id: priorId, ownerUid: user.uid, name: drawingName, revision, area, fileName: fileRef.current.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(user.uid, priorId), projectId: project?.id || null, projectName: project?.name || "", marks, workItems: marks.filter((mark) => mark.kind === "mark").map((mark) => ({ ...mark, ownerUid: user.uid, drawingId: priorId, pageIndex: mark.page })), workEvents, page, pageCount: pages, zoom, rotation, thumbnail: priorThumb, updatedAt: timestamp, storagePending: true };
+          await localDrawingStore(`${user.uid}:${priorId}`, { file: fileRef.current, snapshot: priorSnapshot });
+          setDrawingSessions((current) => ({ ...current, [priorId]: priorSnapshot }));
+          if (navigator.onLine && contentType) {
+            try {
+              const downloadURL = await ensureCloudDrawing(fileRef.current, user.uid, priorId);
+              const synced = { ...priorSnapshot, downloadURL, thumbnail: priorThumb, storagePending: false };
+              await appendCloudWorkEvents(user.uid, priorId, workEvents);
+              await setDoc(doc(db, "users", user.uid, "fieldDrawings", priorId), sanitizeForFirestore(synced), { merge: true });
+              await localDrawingStore(`${user.uid}:${priorId}`, { file: fileRef.current, snapshot: synced });
+              setDrawingSessions((current) => ({ ...current, [priorId]: synced }));
+            } catch { /* The local drawing remains available and will retry when connectivity returns. */ }
+          }
+        } catch (priorErr) {
+          console.warn("[openDrawing] Could not auto-flush prior drawing", priorErr);
         }
       }
       localStorage.setItem(`epcx-current-drawing:${user.uid}`, drawingId);
@@ -1122,7 +1126,10 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       setPage(Number(snapshot.page ?? 1)); setPages(Number(snapshot.pageCount ?? 1)); setZoom(Number(snapshot.zoom ?? 1)); setRotation(Number(snapshot.rotation ?? 0));
       setSaved(snapshot.storagePending !== true); setSelectedId(""); setEditing(null); setWorkspaceView("drawings"); setSyncState(navigator.onLine ? (snapshot.storagePending === true ? "pending" : "synced") : "offline");
       historyRef.current = { past: [], future: [] };
-    } catch { setError("This drawing could not be opened. Your other work remains available."); }
+    } catch (err) {
+      console.error("[openDrawing error]", err);
+      setError("This drawing could not be opened. Your other work remains available.");
+    }
   }
 
   async function openSampleDrawing() {
