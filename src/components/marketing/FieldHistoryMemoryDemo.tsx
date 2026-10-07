@@ -114,7 +114,6 @@ export function FieldHistoryMemoryDemo() {
           <article
             key={date}
             className={`timeline-day-row ${isMatched ? "is-highlighted" : ""} ${isToday ? "is-today-active" : ""}`}
-            data-scroll-reveal="detail"
           >
             <div className="timeline-date-col">
               <time>{date}</time>

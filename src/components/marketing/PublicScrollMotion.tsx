@@ -18,10 +18,19 @@ export function PublicScrollMotion() {
         (entry.target as HTMLElement).classList.add("is-visible");
         observer.unobserve(entry.target);
       });
-    }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+    }, { threshold: 0.02, rootMargin: "60px 0px 60px 0px" });
 
     elements.forEach((element) => observer.observe(element));
+
+    // Fallback: Ensure no element remains blank if observer doesn't trigger
+    const fallbackTimer = window.setTimeout(() => {
+      document.querySelectorAll<HTMLElement>("[data-scroll-reveal]:not(.is-visible)").forEach((element) => {
+        element.classList.add("is-visible");
+      });
+    }, 1200);
+
     return () => {
+      window.clearTimeout(fallbackTimer);
       observer.disconnect();
       document.documentElement.classList.remove("public-motion-ready");
     };
