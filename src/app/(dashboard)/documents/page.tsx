@@ -6,6 +6,7 @@ import { AlertCircle, FileText, RefreshCw, Search, Upload } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatBytes } from "@/lib/utils";
 import { listUserDocuments, type StoredDocument } from "@/lib/firebase/storage";
+import { EpcxSpinner } from "@/components/ui/EpcxSpinner";
 
 export default function DocumentsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -51,7 +52,7 @@ export default function DocumentsPage() {
       {error && <p role="alert" className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"><AlertCircle className="h-4 w-4" />{error}</p>}
 
       <section aria-label="Stored documents" className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-brand-900">
-        {loading ? <div className="flex items-center justify-center gap-2 p-12 text-sm text-slate-500"><RefreshCw className="h-4 w-4 animate-spin motion-reduce:animate-none" />Loading stored files...</div> : filtered.length === 0 ? <div className="p-12 text-center">
+        {loading ? <div className="flex items-center justify-center p-12"><EpcxSpinner size="md" label="Loading stored files…" /></div> : filtered.length === 0 ? <div className="p-12 text-center">
           <FileText className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-700" />
           <h2 className="mt-3 font-semibold text-slate-800 dark:text-slate-200">{search ? "No matching files" : "No stored PDFs yet"}</h2>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{search ? "Try another file name." : "Uploaded PDFs will appear here. This library does not run document analysis."}</p>

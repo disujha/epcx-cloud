@@ -1,6 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ArrowDown, ArrowRight, BookOpen, CalendarDays, Check, CheckCircle2, CircleDashed, ClipboardList, FileSpreadsheet, FileText, Image as ImageIcon, PenLine, RotateCw, ScanText, Search, ShieldCheck, Upload, ZoomIn } from "lucide-react";
+import { DprExtractionDemo } from "./DprExtractionDemo";
+import { FieldHistoryMemoryDemo } from "./FieldHistoryMemoryDemo";
 
 const dayStages = [
   ["START", "Open the drawing or today’s DPR.", "Pick up the records already used on site."],
@@ -53,11 +55,29 @@ export function WorkspaceSupportSections() {
     </section>
 
     <section className="field-home-document-intel">
-      <div className="field-home-intel-inner"><div className="field-home-intel-copy" data-scroll-reveal="side"><p className="field-home-eyebrow"><span/>DOCUMENT REVIEW</p><h2>Turn documents into usable records.</h2><p>For supported PDFs, EPCX can extract document text and help identify details such as date, project, manpower, quantities, drawing number and revision. Review what was detected, then confirm it before it becomes part of the record.</p></div><div className="field-home-extract-flow" data-scroll-reveal="card"><div className="field-home-extract-document"><span><FileText size={17}/>UPLOADED DPR · PDF</span><i>04 OCT 2026</i><b>Daily Progress Report</b><small>Project: Haven Petrochemical Expansion</small><small>Drawing: P-102 · Rev 03</small><small>Manpower: 38</small><div className="extract-highlight">Work quantity: 12 joints</div></div><div className="field-home-extract-arrow"><ArrowRight size={17}/></div><div className="field-home-extract-result"><b>DETECTED DETAILS</b><span>Date <strong>04 Oct 2026</strong></span><span>Project <strong>Haven Petrochemical…</strong></span><span>Manpower <strong>38</strong></span><span>Drawing / Rev <strong>P-102 · 03</strong></span><footer><span>1 EXTRACT</span><i/><span>2 REVIEW</span><i/><span>3 CONFIRM</span></footer></div></div></div>
+      <div className="field-home-intel-inner">
+        <div className="field-home-intel-copy" data-scroll-reveal="side">
+          <p className="field-home-eyebrow"><span/>DOCUMENT REVIEW</p>
+          <h2>Turn documents into usable records.</h2>
+          <p>Bring the records you already have. For paper DPRs, scanned PDFs and site sheets, EPCX extracts shift information into structured tabular format for supervisor review and confirmation.</p>
+        </div>
+        
+        {/* Micro-Interaction 2: Paper DPR -> Extract -> Structured Table -> Review */}
+        <DprExtractionDemo />
+      </div>
     </section>
 
     <section className="field-home-timeline-section">
-      <div className="field-home-timeline-inner"><div className="field-home-timeline-copy" data-scroll-reveal="side"><p className="field-home-eyebrow"><span/>DATE-FIRST ORGANIZATION</p><h2>Find the day again.</h2><p>Records stay organized by date, project and work — without asking the field team to build a complicated filing system.</p></div><div className="field-home-timeline" data-scroll-reveal="side"><header><CalendarDays size={15}/>OCTOBER 2026 <span>PROJECT RECORD</span></header>{timeline.map(([date,drawing,dpr,tbt,photos],index)=><article key={date} data-scroll-reveal="detail"><time>{date}</time><div className="field-home-timeline-items"><span><BookOpen size={14}/>{drawing}</span><span><FileText size={14}/>{dpr}</span><span><ShieldCheck size={14}/>{tbt}</span>{photos&&<span><ImageIcon size={14}/>{photos}</span>}</div><b>{index===0?"TODAY":""}</b></article>)}</div></div>
+      <div className="field-home-timeline-inner">
+        <div className="field-home-timeline-copy" data-scroll-reveal="side">
+          <p className="field-home-eyebrow"><span/>DATE-FIRST ORGANIZATION</p>
+          <h2>Find the day again.</h2>
+          <p>EPCX remembers the work after the shift. Drawings, DPR drafts, TBTs and site photos accumulate automatically by date and work area — recallable anytime without rebuilding spreadsheets.</p>
+        </div>
+
+        {/* Micro-Interaction 3: Field records accumulating by date & searchable recall */}
+        <FieldHistoryMemoryDemo />
+      </div>
     </section>
 
     <section className="field-home-day-result">

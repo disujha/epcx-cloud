@@ -3,141 +3,84 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Mail, Phone, MapPin, Send } from "lucide-react";
-import type { Metadata } from "next";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import app from "@/lib/firebase/config";
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [ticketId, setTicketId] = useState("");
+  const [submissionError, setSubmissionError] = useState("");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    setSubmitted(true);
-    setLoading(false);
+    setSubmissionError("");
+    const fields = new FormData(e.currentTarget);
+    const firstName = String(fields.get("firstName") ?? "").trim();
+    const lastName = String(fields.get("lastName") ?? "").trim();
+    const company = String(fields.get("company") ?? "").trim();
+    const submitTicket = httpsCallable<{ name: string; company: string; email: string; subject: string; category: string; message: string }, { ticketId: string }>(getFunctions(app, "us-central1"), "submitSupportTicket");
+    try {
+      const response = await submitTicket({
+        name: `${firstName} ${lastName}`.trim(),
+        company,
+        email: String(fields.get("email") ?? "").trim(),
+        subject: String(fields.get("subject") ?? "").trim(),
+        category: String(fields.get("category") ?? "other"),
+        message: String(fields.get("message") ?? "").trim(),
+      });
+      setTicketId(response.data.ticketId);
+      setSubmitted(true);
+    } catch (error) {
+      setSubmissionError(error && typeof error === "object" && "code" in error && error.code === "functions/resource-exhausted"
+        ? "We received several requests from this address recently. Please email support@epcx.cloud if you still need help."
+        : "We couldn’t send your request. Please try again, or email support@epcx.cloud.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div className="pt-24 pb-20 px-4 bg-white dark:bg-brand-950 min-h-screen">
-      <div className="max-w-5xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="mb-14"
-        >
-          <div className="inline-flex items-center gap-2 text-xs font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-500 mb-4">
-            <span className="w-6 h-px bg-slate-300 dark:bg-slate-700" />
-            Contact
-          </div>
-          <h1 className="font-display text-5xl font-bold text-slate-900 dark:text-white leading-tight tracking-tight mb-4">
-            Get in touch
-          </h1>
-          <p className="text-lg text-slate-500 dark:text-slate-400 max-w-xl">
-            Interested in EPCX.cloud for your team? Book a demo or send us a
-            message — we typically respond within one business day.
-          </p>
-        </motion.div>
+    <div className="contact-page">
+      <div className="contact-page-grid" aria-hidden="true" />
+      <div className="contact-page-inner">
+        <motion.header className="contact-page-intro" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
+          <p className="contact-page-eyebrow"><span /> EPCX / CONTACT</p>
+          <h1>Let&apos;s talk about <em>your field workflow.</em></h1>
+          <p>Book a product conversation or tell us where your team needs support. We typically reply within one business day.</p>
+        </motion.header>
 
-        <div className="grid md:grid-cols-5 gap-10">
-          {/* Contact info */}
-          <div className="md:col-span-2 space-y-6">
-            {[
-              { icon: Mail, label: "Email", value: "support@epcx.cloud", href: "mailto:support@epcx.cloud" },
-              { icon: Phone, label: "Phone", value: "Available upon request", href: "#" },
-              { icon: MapPin, label: "Headquarters", value: "Engineering teams worldwide", href: "#" },
-            ].map((item) => (
-              <div key={item.label} className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-accent-500/10 flex items-center justify-center flex-shrink-0">
-                  <item.icon className="w-4.5 h-4.5 text-accent-500" strokeWidth={1.5} />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-0.5">
-                    {item.label}
-                  </div>
-                  <a href={item.href} className="text-sm text-slate-700 dark:text-slate-300 hover:text-accent-500 transition-colors">
-                    {item.value}
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
+        <div className="contact-page-layout">
+          <aside className="contact-page-aside">
+            <p className="contact-page-section-label">GET IN TOUCH</p>
+            <h2>Talk to the EPCX team</h2>
+            <p className="contact-page-aside-copy">We can help with product demonstrations, account access, billing and technical questions.</p>
+            <div className="contact-page-details">
+              <a href="mailto:support@epcx.cloud" className="contact-page-detail"><span><Mail size={18} /></span><div><small>EMAIL</small><b>support@epcx.cloud</b><i>We typically reply within one business day.</i></div></a>
+              <div className="contact-page-detail"><span><Phone size={18} /></span><div><small>PHONE</small><b>Available upon request</b><i>Send a note and we can arrange a call.</i></div></div>
+              <div className="contact-page-detail"><span><MapPin size={18} /></span><div><small>SUPPORTING</small><b>Engineering teams worldwide</b><i>Built around real EPC field workflows.</i></div></div>
+            </div>
+            <div className="contact-page-response"><span className="contact-page-response-dot" /><p><b>Need a product walkthrough?</b><br />Choose “Product or demo” in the form and tell us what your team is working on.</p></div>
+          </aside>
 
-          {/* Form */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="md:col-span-3"
-          >
+          <motion.div className="contact-page-form-wrap" initial={{ opacity: 0, x: 14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.4, delay: 0.08 }}>
             {submitted ? (
-              <div className="flex flex-col items-center justify-center h-full py-16 text-center rounded-2xl border border-accent-500/30 bg-accent-500/5">
-                <div className="w-12 h-12 rounded-full bg-accent-500/20 flex items-center justify-center mb-4">
-                  <Send className="w-5 h-5 text-accent-500" />
-                </div>
-                <h3 className="font-semibold text-slate-900 dark:text-white mb-2">Message sent!</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  We&apos;ll get back to you within one business day.
-                </p>
-              </div>
+              <div className="contact-page-success" role="status"><span><Send size={20} /></span><p className="contact-page-section-label">REQUEST RECEIVED</p><h2>Thanks for getting in touch.</h2><p>Your support reference is <b>{ticketId}</b>. Our team will reply to the email address you provided.</p></div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="grid sm:grid-cols-2 gap-5">
-                  {[
-                    { id: "firstName", label: "First Name", type: "text", placeholder: "John" },
-                    { id: "lastName", label: "Last Name", type: "text", placeholder: "Smith" },
-                  ].map((f) => (
-                    <div key={f.id}>
-                      <label htmlFor={f.id} className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
-                        {f.label}
-                      </label>
-                      <input
-                        id={f.id}
-                        type={f.type}
-                        required
-                        placeholder={f.placeholder}
-                        className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-accent-500 transition-colors"
-                      />
-                    </div>
-                  ))}
+              <form onSubmit={handleSubmit} className="contact-page-form">
+                <div className="contact-page-form-heading"><div><p className="contact-page-section-label">SEND A MESSAGE</p><h2>How can we help?</h2></div><span>Fields marked * are required</span></div>
+                <div className="contact-page-form-grid">
+                  <label>First name *<input name="firstName" type="text" required autoComplete="given-name" placeholder="Your first name" /></label>
+                  <label>Last name *<input name="lastName" type="text" required autoComplete="family-name" placeholder="Your last name" /></label>
+                  <label>Work email *<input name="email" type="email" required autoComplete="email" placeholder="you@company.com" /></label>
+                  <label>Company *<input name="company" type="text" required autoComplete="organization" placeholder="Your engineering company" /></label>
+                  <label>Subject *<input name="subject" type="text" required minLength={4} maxLength={160} placeholder="A short summary" /></label>
+                  <label>Request type<select name="category" defaultValue="other"><option value="account">Account access</option><option value="billing">Billing or plan</option><option value="technical">Technical issue</option><option value="sales">Product or demo</option><option value="other">Other</option></select></label>
+                  <label className="contact-page-message-field">Message *<textarea name="message" rows={5} required minLength={15} maxLength={8000} placeholder="Tell us about your team and what you would like help with." /></label>
                 </div>
-                {[
-                  { id: "email", label: "Work Email", type: "email", placeholder: "john@company.com" },
-                  { id: "company", label: "Company", type: "text", placeholder: "Engineering firm name" },
-                ].map((f) => (
-                  <div key={f.id}>
-                    <label htmlFor={f.id} className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
-                      {f.label}
-                    </label>
-                    <input
-                      id={f.id}
-                      type={f.type}
-                      required
-                      placeholder={f.placeholder}
-                      className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-accent-500 transition-colors"
-                    />
-                  </div>
-                ))}
-                <div>
-                  <label htmlFor="message" className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">
-                    Message
-                  </label>
-                  <textarea
-                    id="message"
-                    rows={5}
-                    required
-                    placeholder="Tell us about your engineering team and what you're looking to solve..."
-                    className="w-full px-4 py-3 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-accent-500 transition-colors resize-none"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-accent-500 hover:bg-accent-600 text-white font-semibold rounded-xl transition-all duration-200 disabled:opacity-60"
-                >
-                  {loading ? "Sending..." : "Send Message"}
-                  {!loading && <Send className="w-4 h-4" />}
-                </button>
+                {submissionError && <p role="alert" className="contact-page-error">{submissionError}</p>}
+                <button type="submit" disabled={loading} className="contact-page-submit">{loading ? "Sending request…" : "Send message"}{!loading && <Send size={16} />}</button>
               </form>
             )}
           </motion.div>

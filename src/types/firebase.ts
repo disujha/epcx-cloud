@@ -10,6 +10,13 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL?: string;
+  designation?: string;
+  phoneNumber?: string;
+  company?: string;
+  department?: string;
+  discipline?: string;
+  workLocation?: string;
+  employeeId?: string;
   organizationId?: string;
   role: "admin" | "engineer" | "viewer";
   createdAt: FirestoreTimestamp;
@@ -21,6 +28,8 @@ export interface UserProfile {
 export interface Organization {
   id: string;
   name: string;
+  logoURL?: string;
+  companyDetails?: string;
   industry: Industry;
   plan: "starter" | "professional" | "enterprise";
   memberIds: string[];
@@ -203,13 +212,47 @@ export interface OrganizationSettings {
 export interface Project {
   id: string;
   name: string;
+  client?: string;
+  pmcConsultant?: string;
+  epcContractor?: string;
+  mainContractor?: string;
+  location?: string;
+  facility?: string;
+  areaUnits?: string[];
+  disciplines?: string[];
+  workTypes?: string[];
+  primaryDisciplines?: string[];
+  projectType?: "EPC" | "Construction" | "Shutdown / Turnaround" | "Maintenance" | "Fabrication" | "Engineering" | "Other";
+  projectCode?: string;
+  startDate?: string;
+  endDate?: string;
+  actualCompletion?: string;
+  projectContact?: string;
   description?: string;
   ownerId: string;
+  memberIds?: string[];
+  members?: Record<string, ProjectRole>;
   organizationId?: string;
   industry: Industry;
-  status: "active" | "archived" | "completed";
+  status: "planning" | "active" | "on_hold" | "completed" | "closed" | "archived";
   documentCount: number;
   tags: string[];
+  createdAt: FirestoreTimestamp;
+  updatedAt: FirestoreTimestamp;
+}
+
+export type ProjectRole = "project_admin" | "editor" | "contributor" | "viewer";
+
+export interface ProjectInvitation {
+  id: string;
+  projectId: string;
+  projectName: string;
+  organizationId?: string;
+  organizationName?: string;
+  email: string;
+  role: ProjectRole;
+  invitedBy: string;
+  status: "pending" | "accepted";
   createdAt: FirestoreTimestamp;
   updatedAt: FirestoreTimestamp;
 }
@@ -228,6 +271,8 @@ export interface Document {
   status: DocumentStatus;
   projectId?: string;
   uploadedBy: string;
+  createdBy?: string;
+  updatedBy?: string;
   organizationId?: string;
   tags: string[];
   metadata?: DocumentMetadata;
@@ -253,6 +298,8 @@ export interface Review {
   documentId: string;
   documentName: string;
   userId: string;
+  createdBy?: string;
+  updatedBy?: string;
   organizationId?: string;
   projectId?: string;
   status: "pending" | "in_progress" | "completed" | "failed";

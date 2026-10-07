@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ProjectWorkspaceProvider } from "@/contexts/ProjectWorkspaceContext";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { ServiceNoticeBanner } from "@/components/marketing/ServiceNoticeBanner";
 import "./globals.css";
 import "./field-records.css";
 import "./field-records-nav.css";
@@ -10,6 +12,7 @@ import "./marketing-home-refine.css";
 import "./field-app-shell.css";
 import "./public-home.css";
 import "./field-workspace-home.css";
+import "./field-work-register.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://epcx.cloud"),
@@ -83,7 +86,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange={false}
         >
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider><ProjectWorkspaceProvider><ServiceNoticeBanner />{children}</ProjectWorkspaceProvider></AuthProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -4,11 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { arrayUnion, collection, doc, getDocs, setDoc } from "firebase/firestore";
-import { CalendarDays, Download, ExternalLink, FileText, LoaderCircle, Plus, RotateCw, Upload, X } from "lucide-react";
+import {
+  CalendarDays, CheckCircle2, Download, ExternalLink, FileText,
+  GitMerge, Library, LoaderCircle, Plus, RotateCw, Sparkles, Upload, X,
+} from "lucide-react";
 import ExcelJS from "exceljs";
 import { auth, db } from "@/lib/firebase/config";
 import { downloadDocument, uploadDocument } from "@/lib/firebase/storage";
 import type { FieldProject } from "@/components/field-progress/FieldProjectProfile";
+import { useFieldWork } from "@/contexts/FieldWorkContext";
+import { DprExtractionAndReconciliation } from "./DprExtractionAndReconciliation";
+import { EpcxSpinner } from "@/components/ui/EpcxSpinner";
+
+type DprTab = "library" | "extract" | "reconcile";
 
 type FieldDocument = {
   id: string;
@@ -97,6 +105,12 @@ export function DailyDprWorkspace({ onOpenDrawing, initialAdd = false, initialRe
   const [extractionOpen, setExtractionOpen] = useState(false);
   const [draftFields, setDraftFields] = useState<Record<string, string>>({});
   const [draftDate, setDraftDate] = useState("");
+  const [activeTab, setActiveTab] = useState<DprTab>("library");
+
+  // Field work context — component is always rendered inside FieldWorkProvider
+  const { todayWorkItems, isDprDraftReady } = useFieldWork();
+  const todayCompletedCount = todayWorkItems?.filter((wi) => wi.status === "Complete").length ?? 0;
+
   const selected = records.find((record) => record.id === selectedId) ?? null;
   const authRedirect = initialAdd ? "/start?view=dpr&add=dpr" : initialRecordId ? `/start?view=dpr&record=${encodeURIComponent(initialRecordId)}` : "/start?view=dpr";
 
@@ -161,7 +175,7 @@ export function DailyDprWorkspace({ onOpenDrawing, initialAdd = false, initialRe
       }) : [];
       const record: FieldDocument = { id, ownerUid: user.uid, createdBy: user.uid, updatedBy: user.uid, type: "DPR", title: file.name.replace(/\.[^.]+$/, ""), fileName: file.name, filePath: path, mimeType: file.type || "application/octet-stream", attachments: [{ filePath: path, fileName: file.name, mimeType: file.type || "application/octet-stream" }], documentDate: detectedDate || timestamp.slice(0,10), createdAt: timestamp, updatedAt: timestamp, ocrStatus: status, rawOcrText: text, extracted: fieldValue, confirmedFields: [], drawingSuggestions: references, projectId: project?.id || null, projectName: project?.name || "", area: fieldValue.area || "", discipline: "", status: "active", tags: [], relatedRecords: [] };
       await setDoc(doc(db, "users", user.uid, "fieldDocuments", id), record);
-      setRecords((old) => [record, ...old]); setSelectedId(id); setDraftDate(detectedDate); setDraftFields(fieldValue); setExtractionOpen(true);
+      setRecords((old) => [record, ...old]); setSelectedId(id); setDraftDate(detectedDate); setDraftFields(fieldValue); setExtractionOpen(true); setActiveTab("library");
       setMessage(text ? "Selectable PDF text extracted. Review the suggestions; confirm them when they look right." : "Original saved. This document needs OCR; scanned content has not been read yet.");
     } catch (error) {
       console.error("DPR upload failed", error);
@@ -221,15 +235,138 @@ export function DailyDprWorkspace({ onOpenDrawing, initialAdd = false, initialRe
   }
 
   return <section className="dpr-workspace">
-    <header className="dpr-library-header"><div><p className="drawing-eyebrow">FIELD RECORDS / DAILY DPR</p><h1>Daily DPR</h1><p>Reports by date, with suggested details you can review and confirm.</p></div><div className="dpr-header-actions"><button onClick={() => void exportExcel()} disabled={!records.length}><Download size={16}/>Export DPR Data</button><label className="dpr-add-button"><Plus size={16}/>Add DPR<input ref={dprInputRef} type="file" accept={accept} disabled={!user || busy} onChange={(event) => void processFile(event.target.files?.[0])}/></label></div></header>
+    {/* ── Header ── */}
+    <header className="dpr-library-header">
+      <div>
+        <p className="field-section-kicker"><FileText size={14}/>FIELD RECORDS / DAILY DPR</p>
+        <h1>Daily DPR</h1>
+        <p className="field-workspace-subline">Manage daily progress reports, extract data and reconcile against work items.</p>
+      </div>
+      <div className="dpr-header-actions">
+        <button onClick={() => void exportExcel()} disabled={!records.length}><Download size={16}/>Export DPR Data</button>
+        <label className="dpr-add-button">
+          <Plus size={16}/>Add DPR
+          <input ref={dprInputRef} type="file" accept={accept} disabled={!user || busy} onChange={(event) => void processFile(event.target.files?.[0])}/>
+        </label>
+      </div>
+    </header>
+
+    {/* ── DPR draft-ready banner ── */}
+    {isDprDraftReady && (
+      <div className="dpr-draft-ready-banner" role="status">
+        <CheckCircle2 size={18}/>
+        <div>
+          <b>{todayCompletedCount} work item{todayCompletedCount === 1 ? "" : "s"} recorded today.</b>
+          <span> DPR draft is ready for review — add manpower, TBT and remarks, then finalise.</span>
+        </div>
+        <button onClick={() => setActiveTab("reconcile")} className="dpr-draft-review-btn">
+          Review DPR draft <span aria-hidden="true">→</span>
+        </button>
+      </div>
+    )}
+
+    {/* ── Tab navigation ── */}
+    <nav className="dpr-tab-nav" role="tablist" aria-label="DPR workspace sections">
+      <button role="tab" aria-selected={activeTab === "library"} className={activeTab === "library" ? "active" : ""} onClick={() => setActiveTab("library")}>
+        <Library size={15}/>Library
+      </button>
+      <button role="tab" aria-selected={activeTab === "extract"} className={activeTab === "extract" ? "active" : ""} onClick={() => setActiveTab("extract")}>
+        <Sparkles size={15}/>Extract from photo / PDF
+      </button>
+      <button role="tab" aria-selected={activeTab === "reconcile"} className={activeTab === "reconcile" ? "active" : ""} onClick={() => setActiveTab("reconcile")}>
+        <GitMerge size={15}/>DPR ↔ Drawing reconcile
+      </button>
+    </nav>
+
+    {/* ── Status messages ── */}
     {!user && <div className="dpr-signin"><FileText/><h2>Sign in to add a DPR</h2><p>Your field records are private to your account.</p><Link href={`/login?redirect=${encodeURIComponent(authRedirect)}`}>Continue with Google</Link></div>}
     {message && <div className="dpr-message" role="status">{message}<button onClick={() => setMessage("")} aria-label="Dismiss"><X size={15}/></button></div>}
-    {busy && <div className="dpr-upload-progress"><LoaderCircle size={17} className="spin"/><span>{progress ? `Uploading original · ${progress}%` : "Reading document and saving original…"}</span></div>}
-    <div className="dpr-content">
-      <aside className="dpr-list"><div className="dpr-list-heading"><CalendarDays size={16}/><b>By date</b><span>{records.length}</span></div>{Object.keys(dateGroups).length ? Object.entries(dateGroups).sort(([a], [b]) => b.localeCompare(a)).map(([date, group]) => <div className="dpr-date-group" key={date}><h2>{date === "undated" ? date : dateLabel(date)}</h2>{group.map((record) => <button key={record.id} className={`dpr-list-record ${selectedId === record.id ? "active" : ""}`} onClick={() => { setSelectedId(record.id); setExtractionOpen(false); }}><span className="dpr-thumb"><FileText size={19}/></span><span><b>{record.title || record.fileName}</b><small>{record.ocrStatus === "processed" ? "Text extracted" : record.ocrStatus === "needs-ocr" ? "OCR needed" : record.ocrStatus}</small></span></button>)}</div>) : <p className="dpr-empty-list">No DPRs yet. Add the first report to start your date based record.</p>}</aside>
-      <article className="dpr-document-area">{selected ? <><div className="dpr-document-toolbar"><div><b>{dateLabel(selected.documentDate)}</b><span>{selected.fileName}</span></div><div><button onClick={() => setExtractionOpen((open) => !open)}>Review extracted data</button><button onClick={() => void retryExtraction()} disabled={busy}><RotateCw size={15}/>Retry extraction</button></div></div><div className="dpr-document-frame">{previewUrl ? selected.mimeType === "application/pdf" ? <iframe src={`${previewUrl}#toolbar=1&navpanes=0`} title={`DPR ${selected.title}`}/> : <img src={previewUrl} alt={selected.title}/> : <p>Loading original…</p>}</div>
-      <div className="dpr-related"><h2>Related drawings</h2>{selected.drawingSuggestions.length ? selected.drawingSuggestions.map((suggestion) => <div className="dpr-reference" key={suggestion.drawingId}><span><b>{suggestion.drawingName}</b><small>{suggestion.ignored ? "Suggestion dismissed" : suggestion.confirmed ? "Confirmed relationship" : suggestion.confidence >= .8 ? "Possible related drawing" : "Check this drawing number"} · {suggestion.reference}</small></span>{!suggestion.ignored&&<><button onClick={() => void confirmDrawing(selected, suggestion.drawingId)} disabled={suggestion.confirmed}>{suggestion.confirmed ? "Linked" : "Link"}</button>{!suggestion.confirmed&&<button onClick={() => void ignoreDrawing(selected, suggestion.drawingId)}>Ignore</button>}<button onClick={() => onOpenDrawing(suggestion.drawingId)}><ExternalLink size={14}/>Open</button></>}</div>) : <p>No drawing references suggested yet. Confirmed links will appear here.</p>}</div>
-      {extractionOpen && <aside className="dpr-extracted-panel"><div className="dpr-panel-title"><div><p className="drawing-eyebrow">SUGGESTIONS · REVIEW REQUIRED</p><h2>Detected information</h2></div><button onClick={() => setExtractionOpen(false)} aria-label="Close"><X size={17}/></button></div><label>DPR date<input type="date" value={draftDate} onChange={(event) => setDraftDate(event.target.value)}/></label>{Object.entries(draftFields).map(([key, value]) => <label key={key}>{key.replace(/[A-Z]/g, (letter) => ` ${letter}`).replace(/^./, (letter) => letter.toUpperCase())}<input value={value} onChange={(event) => setDraftFields((old) => ({ ...old, [key]: event.target.value }))}/></label>)}{!Object.keys(draftFields).length && <p>No selectable text was found. This upload remains available as the original; scanned document OCR requires the OCR service.</p>}<div className="dpr-panel-actions"><button onClick={() => void saveCorrections(false)}>Save corrections</button><button onClick={() => void saveCorrections(true)} className="drawing-save-mark">Confirm detected details</button></div><details><summary>Raw extracted text</summary><pre>{selected.rawOcrText || "No text extracted"}</pre></details></aside>}</> : <div className="dpr-no-selection"><FileText size={32}/><h2>Your daily reports</h2><p>Choose a date on the left, or add a DPR PDF or image. EPCX keeps the original and offers extracted details for your review.</p>{user && <label className="dpr-add-button"><Upload size={16}/>Add DPR<input type="file" accept={accept} onChange={(event) => void processFile(event.target.files?.[0])}/></label>}</div>}</article>
-    </div>
+    {busy && <div className="dpr-upload-progress"><EpcxSpinner size="sm" inline /><span>{progress ? `Uploading original · ${progress}%` : "Reading document and saving original…"}</span></div>}
+
+    {/* ── Tab panels ── */}
+
+    {activeTab === "library" && (
+      <div className="dpr-content">
+        <aside className="dpr-list">
+          <div className="dpr-list-heading"><CalendarDays size={16}/><b>By date</b><span>{records.length}</span></div>
+          {Object.keys(dateGroups).length ? Object.entries(dateGroups).sort(([a], [b]) => b.localeCompare(a)).map(([date, group]) =>
+            <div className="dpr-date-group" key={date}>
+              <h2>{date === "undated" ? date : dateLabel(date)}</h2>
+              {group.map((record) =>
+                <button key={record.id} className={`dpr-list-record ${selectedId === record.id ? "active" : ""}`} onClick={() => { setSelectedId(record.id); setExtractionOpen(false); }}>
+                  <span className="dpr-thumb"><FileText size={19}/></span>
+                  <span><b>{record.title || record.fileName}</b><small>{record.ocrStatus === "processed" ? "Text extracted" : record.ocrStatus === "needs-ocr" ? "OCR needed" : record.ocrStatus}</small></span>
+                </button>
+              )}
+            </div>
+          ) : <p className="dpr-empty-list">No DPRs yet. Add the first report to start your date-based record.</p>}
+        </aside>
+
+        <article className="dpr-document-area">
+          {selected ? <>
+            <div className="dpr-document-toolbar">
+              <div><b>{dateLabel(selected.documentDate)}</b><span>{selected.fileName}</span></div>
+              <div>
+                <button onClick={() => setExtractionOpen((open) => !open)}>Review extracted data</button>
+                <button onClick={() => void retryExtraction()} disabled={busy}><RotateCw size={15}/>Retry extraction</button>
+              </div>
+            </div>
+            <div className="dpr-document-frame">
+              {previewUrl ? selected.mimeType === "application/pdf" ? <iframe src={`${previewUrl}#toolbar=1&navpanes=0`} title={`DPR ${selected.title}`}/> : <img src={previewUrl} alt={selected.title}/> : <p>Loading original…</p>}
+            </div>
+            <div className="dpr-related">
+              <h2>Related drawings</h2>
+              {selected.drawingSuggestions.length ? selected.drawingSuggestions.map((suggestion) =>
+                <div className="dpr-reference" key={suggestion.drawingId}>
+                  <span><b>{suggestion.drawingName}</b><small>{suggestion.ignored ? "Suggestion dismissed" : suggestion.confirmed ? "Confirmed relationship" : suggestion.confidence >= .8 ? "Possible related drawing" : "Check this drawing number"} · {suggestion.reference}</small></span>
+                  {!suggestion.ignored && <><button onClick={() => void confirmDrawing(selected, suggestion.drawingId)} disabled={suggestion.confirmed}>{suggestion.confirmed ? "Linked" : "Link"}</button>{!suggestion.confirmed && <button onClick={() => void ignoreDrawing(selected, suggestion.drawingId)}>Ignore</button>}<button onClick={() => onOpenDrawing(suggestion.drawingId)}><ExternalLink size={14}/>Open</button></>}
+                </div>
+              ) : <p>No drawing references suggested yet. Confirmed links will appear here.</p>}
+            </div>
+            {extractionOpen && <aside className="dpr-extracted-panel">
+              <div className="dpr-panel-title">
+                <div><p className="drawing-eyebrow">SUGGESTIONS · REVIEW REQUIRED</p><h2>Detected information</h2></div>
+                <button onClick={() => setExtractionOpen(false)} aria-label="Close"><X size={17}/></button>
+              </div>
+              <label>DPR date<input type="date" value={draftDate} onChange={(event) => setDraftDate(event.target.value)}/></label>
+              {Object.entries(draftFields).map(([key, value]) =>
+                <label key={key}>{key.replace(/[A-Z]/g, (letter) => ` ${letter}`).replace(/^./, (letter) => letter.toUpperCase())}<input value={value} onChange={(event) => setDraftFields((old) => ({ ...old, [key]: event.target.value }))}/></label>
+              )}
+              {!Object.keys(draftFields).length && <p>No selectable text was found. This upload remains available as the original; scanned document OCR requires the OCR service.</p>}
+              <div className="dpr-panel-actions">
+                <button onClick={() => void saveCorrections(false)}>Save corrections</button>
+                <button onClick={() => void saveCorrections(true)} className="drawing-save-mark">Confirm detected details</button>
+              </div>
+              <details><summary>Raw extracted text</summary><pre>{selected.rawOcrText || "No text extracted"}</pre></details>
+            </aside>}
+          </> : <div className="dpr-no-selection">
+            <FileText size={32}/>
+            <h2>Your daily reports</h2>
+            <p>Choose a date on the left, or add a DPR PDF or image. EPCX keeps the original and offers extracted details for your review.</p>
+            {user && <label className="dpr-add-button"><Upload size={16}/>Add DPR<input type="file" accept={accept} onChange={(event) => void processFile(event.target.files?.[0])}/></label>}
+          </div>}
+        </article>
+      </div>
+    )}
+
+    {activeTab === "extract" && (
+      <div className="dpr-tab-panel">
+        <DprExtractionAndReconciliation
+          project={project}
+          onOpenDrawing={onOpenDrawing}
+          initialMode="extract"
+        />
+      </div>
+    )}
+
+    {activeTab === "reconcile" && (
+      <div className="dpr-tab-panel">
+        <DprExtractionAndReconciliation
+          project={project}
+          onOpenDrawing={onOpenDrawing}
+          initialMode="reconcile"
+        />
+      </div>
+    )}
   </section>;
 }

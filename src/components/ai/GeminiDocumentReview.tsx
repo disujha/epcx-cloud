@@ -97,7 +97,7 @@ export function GeminiDocumentReview() {
 
       <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <p>Paste only text you are allowed to share with a third-party AI service. Uploaded files are not stored here. AI output can miss or misread requirements and must be checked by a qualified engineer.</p>
+        <p>Paste only text you are allowed to share with EPCX AI, which uses an external AI service for this review. Uploaded files are not stored here. AI output can miss or misread requirements and must be checked by a qualified engineer.</p>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card dark:border-slate-800 dark:bg-brand-900 sm:p-7">

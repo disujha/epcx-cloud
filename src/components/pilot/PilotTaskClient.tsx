@@ -14,13 +14,27 @@ const tasks: Record<PilotTool, { title:string; description:string; inputs:string
   "welding-photo": { title:"Welding photo assistance", description:"Describe possible visible surface features and limitations for inspector review. Does not replace inspection or NDT.", inputs:"Up to 3 JPG, PNG, or WebP images.", accept:".jpg,.jpeg,.png,.webp", fileCount:3, sample:"Illustrative example: Possible surface feature for inspector review; image alone cannot determine weld acceptance." },
 };
 
-export function PilotTaskClient({ tool }: { tool: PilotTool }) {
+export function PilotTaskClient({
+  tool,
+  embedded = false,
+  initialContext = "",
+}: {
+  tool: PilotTool;
+  embedded?: boolean;
+  initialContext?: string;
+}) {
   const task = tasks[tool];
   const [maxUploadBytes, setMaxUploadBytes] = useState(10 * 1024 * 1024);
   const [freeJobLimit, setFreeJobLimit] = useState(3);
   const [files, setFiles] = useState<File[]>([]);
-  const [pastedText,setPastedText]=useState("");
-  const [userContext,setUserContext]=useState("");
+  const [pastedText, setPastedText] = useState("");
+  const [userContext, setUserContext] = useState(initialContext);
+
+  useEffect(() => {
+    if (initialContext) {
+      setUserContext(initialContext);
+    }
+  }, [initialContext]);
   const [result, setResult] = useState<PilotResult | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -57,17 +71,17 @@ export function PilotTaskClient({ tool }: { tool: PilotTool }) {
     finally{setSaving(false);}
   }
 
-  return <main className="min-h-screen bg-[#f7f8f6] px-4 pb-16 pt-28 text-[#142421] sm:px-6 lg:pt-32">
-    <div className="mx-auto max-w-6xl">
-      <Link href="/#tasks" className="inline-flex min-h-10 items-center gap-2 text-sm font-medium text-[#0e5549] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0e5549]"><ArrowLeft size={16}/> All EPC tasks</Link>
-      <div className="mt-7 grid gap-8 lg:grid-cols-[.8fr_1.2fr]">
+  return <main className={embedded ? "field-ai-tool" : "min-h-screen bg-[#f7f8f6] px-4 pb-16 pt-28 text-[#142421] sm:px-6 lg:pt-32"}>
+    <div className={embedded ? "field-ai-tool-inner" : "mx-auto max-w-6xl"}>
+      {!embedded && <Link href="/#tasks" className="inline-flex min-h-10 items-center gap-2 text-sm font-medium text-[#0e5549] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0e5549]"><ArrowLeft size={16}/> All EPC tasks</Link>}
+      <div className={`${embedded ? "field-ai-tool-grid" : "mt-7 grid gap-8 lg:grid-cols-[.8fr_1.2fr]"}`}>
         <section className="border border-slate-300 bg-white p-6 sm:p-8">
           <p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#0e5549]">EPCX Cloud / EPC task</p>
           <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight">{task.title}</h1>
           <p className="mt-4 text-sm leading-6 text-slate-600">{task.description}</p>
           <p className="mt-6 text-xs font-bold uppercase tracking-wider text-slate-500">Required input</p><p className="mt-1 text-sm leading-6">{task.inputs}</p>
           <div className="mt-6 border-l-2 border-[#0e5549] bg-[#f3f6f3] p-4 text-sm leading-6"><strong>Illustrative example</strong><br/>{task.sample}</div>
-          <p className="mt-5 text-xs leading-5 text-slate-600"><strong>Processing:</strong> {tool === "ra-check" || tool === "tbt-register" ? "This task does not send your files to an AI service." : "Google Gemini 3.1 Flash-Lite helps interpret these files."}</p>
+          <p className="mt-5 text-xs leading-5 text-slate-600"><strong>EPCX AI:</strong> {tool === "ra-check" || tool === "tbt-register" ? "Not used for this task; results are prepared with rule-based processing." : "Helps interpret these files and prepare a draft for your review."}</p>
           <p className="mt-3 flex gap-2 text-xs leading-5 text-slate-600"><LockKeyhole size={15} className="mt-0.5 shrink-0"/>Your files are kept private. Inputs are scheduled for deletion after 30 days and results after 7 days. Review <Link href="/privacy" className="font-semibold underline">privacy details</Link>.</p>
         </section>
         <section className="border border-slate-300 bg-white p-6 sm:p-8">

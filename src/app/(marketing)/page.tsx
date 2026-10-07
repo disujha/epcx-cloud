@@ -2,6 +2,7 @@
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { WorkspaceSupportSections } from "@/components/marketing/WorkspaceSupportSections";
 import { PublicScrollMotion } from "@/components/marketing/PublicScrollMotion";
+import { HomePricingPreview } from "@/components/marketing/HomePricingPreview";
 
 export const metadata: Metadata = {
   title: "EPCX.cloud | Field records for EPC and industrial sites",
@@ -13,5 +14,6 @@ export default function HomePage() {
     <PublicScrollMotion />
     <HeroSection />
     <WorkspaceSupportSections />
+    <HomePricingPreview />
   </div>;
 }

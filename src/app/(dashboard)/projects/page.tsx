@@ -1,87 +1,31 @@
 "use client";
 
-import { motion } from "framer-motion";
-import { FolderOpen, Plus, MoreHorizontal, FileText, Calendar } from "lucide-react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { Building2, MapPin, Plus, Users, FolderKanban, Check } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { createProject, getUserProjects, getPendingProjectInvitations, acceptProjectInvitation } from "@/lib/firebase/firestore";
+import { listUserOrganizations } from "@/lib/billcheck/data";
+import type { Organization, Project, ProjectInvitation } from "@/types/firebase";
+import { useProjectWorkspace } from "@/contexts/ProjectWorkspaceContext";
 
-const MOCK_PROJECTS = [
-  { id: "1", name: "Refinery TAR 2024", industry: "Refinery", docs: 24, status: "active", date: "Jun 2024" },
-  { id: "2", name: "Pump Skid Package", industry: "Oil & Gas", docs: 8, status: "active", date: "Jul 2024" },
-  { id: "3", name: "Power Plant Upgrade", industry: "Power", docs: 42, status: "completed", date: "Mar 2024" },
-];
-
-const statusColors: Record<string, string> = {
-  active: "text-accent-500 bg-accent-500/10",
-  completed: "text-slate-500 bg-slate-100 dark:bg-slate-800",
-  archived: "text-slate-400 bg-slate-50 dark:bg-slate-900",
-};
+const input = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-accent-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white";
+const emptyForm = { name: "", location: "", client: "", projectCode: "", description: "", startDate: "", endDate: "", organizationId: "" };
 
 export default function ProjectsPage() {
-  return (
-    <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
-      >
-        <div>
-          <h1 className="font-display text-2xl font-bold text-slate-900 dark:text-white">Projects</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Organize documents and reviews by project.</p>
-        </div>
-        <button className="flex items-center gap-2 px-4 py-2.5 bg-accent-500 hover:bg-accent-600 text-white font-semibold text-sm rounded-xl transition-all shadow-sm">
-          <Plus className="w-4 h-4" />
-          New Project
-        </button>
-      </motion.div>
-
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {MOCK_PROJECTS.map((proj, i) => (
-          <motion.div
-            key={proj.id}
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: i * 0.08 }}
-            className="bg-white dark:bg-brand-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-card hover:shadow-card-hover hover:border-slate-300 dark:hover:border-slate-700 transition-all group"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-10 h-10 rounded-xl bg-accent-500/10 flex items-center justify-center">
-                <FolderOpen className="w-5 h-5 text-accent-500" strokeWidth={1.75} />
-              </div>
-              <button className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors opacity-0 group-hover:opacity-100">
-                <MoreHorizontal className="w-4 h-4" />
-              </button>
-            </div>
-            <h3 className="font-semibold text-slate-900 dark:text-white mb-1">{proj.name}</h3>
-            <p className="text-xs text-slate-400 mb-4">{proj.industry}</p>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-                <div className="flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5" />
-                  {proj.docs} docs
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {proj.date}
-                </div>
-              </div>
-              <span className={`text-[10px] font-semibold px-2 py-1 rounded-full capitalize ${statusColors[proj.status]}`}>
-                {proj.status}
-              </span>
-            </div>
-          </motion.div>
-        ))}
-
-        {/* Empty state / Add new */}
-        <motion.button
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.25 }}
-          className="flex flex-col items-center justify-center gap-3 p-5 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-accent-500/50 hover:bg-accent-500/5 transition-all text-slate-400 hover:text-accent-500 min-h-[160px]"
-        >
-          <Plus className="w-6 h-6" />
-          <span className="text-sm font-medium">Create new project</span>
-        </motion.button>
-      </div>
-    </div>
-  );
+  const { user } = useAuth(); const { refreshProjects, selectProject } = useProjectWorkspace();
+  const [projects, setProjects] = useState<Project[]>([]); const [organizations, setOrganizations] = useState<Organization[]>([]); const [invitations, setInvitations] = useState<ProjectInvitation[]>([]);
+  const [form, setForm] = useState(emptyForm); const [creating, setCreating] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
+  const reload = useCallback(async () => { if (!user) return; const [p, o, invites] = await Promise.all([getUserProjects(user.uid), listUserOrganizations(user.uid), getPendingProjectInvitations(user.email ?? "")]); setProjects(p); setOrganizations(o); setInvitations(invites); }, [user]);
+  useEffect(() => { void Promise.resolve().then(() => reload()).catch((error) => setMessage(error instanceof Error ? error.message : "Projects could not load.")); }, [reload]);
+  async function create(event: FormEvent) { event.preventDefault(); if (!user || !form.name.trim()) return; setBusy(true); setMessage(""); try { const ref = await createProject({ ...form, name: form.name.trim(), location: form.location.trim() || undefined, ownerId: user.uid, organizationId: form.organizationId || undefined }); await reload(); await refreshProjects(ref.id); setCreating(false); setForm(emptyForm); setMessage("Project created. You are the Project Admin."); } catch (error) { setMessage(error instanceof Error ? error.message : "Project could not be created."); } finally { setBusy(false); } }
+  async function accept(invitation: ProjectInvitation) { if (!user) return; setBusy(true); try { await acceptProjectInvitation(invitation, user.uid); await reload(); await refreshProjects(invitation.projectId); setMessage(`You joined ${invitation.projectName}.`); } catch (error) { setMessage(error instanceof Error ? error.message : "Invitation could not be accepted."); } finally { setBusy(false); } }
+  return <div className="mx-auto max-w-5xl space-y-7">
+    <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-accent-600">Field workspace</p><h1 className="mt-2 font-display text-3xl font-bold text-slate-900 dark:text-white">Projects / sites</h1><p className="mt-1 text-sm text-slate-500">Each project is the shared home for its field records and team.</p></div><button onClick={() => setCreating((v) => !v)} className="flex items-center gap-2 rounded-xl bg-accent-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-accent-700"><Plus className="h-4 w-4" /> New project</button></header>
+    {message && <p role="status" className="text-sm text-slate-600 dark:text-slate-300">{message}</p>}
+    {creating && <form onSubmit={create} className="rounded-2xl border border-accent-500/30 bg-white p-6 shadow-card dark:bg-brand-900"><div className="mb-4"><h2 className="font-semibold text-slate-900 dark:text-white">Set up a project</h2><p className="text-xs text-slate-500">Project name is required. Add site and contract details whenever they’re available.</p></div><div className="grid gap-3 sm:grid-cols-2"><input required aria-label="Project name" placeholder="Project name *" className={input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /><input aria-label="Site / location (optional)" placeholder="Site / location (optional)" className={input} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /><input placeholder="Owner / Client" className={input} value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })} /><input placeholder="Project number / contract number" className={input} value={form.projectCode} onChange={(e) => setForm({ ...form, projectCode: e.target.value })} /><input type="date" aria-label="Start date (optional)" className={input} value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /><input type="date" aria-label="Planned completion (optional)" className={input} value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} /><select aria-label="Organization (optional)" className={input} value={form.organizationId} onChange={(e) => setForm({ ...form, organizationId: e.target.value })}><option value="">Organization (optional)</option>{organizations.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}</select><textarea placeholder="Description (optional)" className={`${input} sm:col-span-2`} rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setCreating(false)} className="rounded-xl px-4 py-2 text-sm text-slate-500">Cancel</button><button disabled={busy} className="rounded-xl bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{busy ? "Creating…" : "Create project"}</button></div></form>}
+    {invitations.length > 0 && <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 dark:border-amber-900 dark:bg-amber-950/20"><h2 className="text-sm font-semibold text-slate-900 dark:text-white">Project invitations</h2><div className="mt-3 space-y-2">{invitations.map((invite) => <div key={invite.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-3 dark:bg-brand-900"><div><p className="text-sm font-medium">{invite.projectName}</p><p className="text-xs text-slate-500">{invite.organizationName || "EPCX project"} · {invite.role.replace("_", " ")}</p></div><button disabled={busy} onClick={() => void accept(invite)} className="flex items-center gap-1 rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white"><Check className="h-3.5 w-3.5" /> Accept invitation</button></div>)}</div></section>}
+    {projects.length ? <div className="grid gap-4 sm:grid-cols-2">{projects.map((project) => <article key={project.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card dark:border-slate-800 dark:bg-brand-900"><div className="flex items-start justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-500/10 text-accent-600"><FolderKanban className="h-5 w-5" /></div><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold uppercase text-emerald-700">{project.members?.[user?.uid ?? ""]?.replace("_", " ") ?? (project.ownerId === user?.uid ? "project admin" : "member")}</span></div><h2 className="mt-4 font-semibold text-slate-900 dark:text-white">{project.name}</h2><p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><MapPin className="h-3.5 w-3.5" />{project.location || "Location not set"}</p>{project.client && <p className="mt-1 text-xs text-slate-500">Client: {project.client}</p>}<div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 dark:border-slate-800"><span className="flex items-center gap-1.5 text-xs text-slate-500"><Users className="h-3.5 w-3.5" />{project.memberIds?.length ?? 1} team member{(project.memberIds?.length ?? 1) === 1 ? "" : "s"}</span><button onClick={() => selectProject(project.id)} className="text-xs font-semibold text-accent-700 hover:text-accent-800">Set active</button></div></article>)}</div> : !creating && <div className="rounded-2xl border border-dashed border-slate-300 px-6 py-12 text-center dark:border-slate-700"><Building2 className="mx-auto h-8 w-8 text-slate-300" /><h2 className="mt-3 font-semibold text-slate-800 dark:text-white">Your project workspace starts here</h2><p className="mx-auto mt-1 max-w-md text-sm text-slate-500">Create a site record to bring your team and field records together.</p><button onClick={() => setCreating(true)} className="mt-4 rounded-xl bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Create a project</button></div>}
+    <div className="flex flex-wrap gap-3 border-t border-slate-200 pt-4 text-sm dark:border-slate-800"><Link href="/team" className="text-accent-700 hover:underline">Project team →</Link><Link href="/organization" className="text-accent-700 hover:underline">Organization settings →</Link></div>
+  </div>;
 }

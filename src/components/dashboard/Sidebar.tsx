@@ -5,22 +5,24 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, FileText, FolderOpen, ReceiptText, ClipboardCheck, MapPinned,
-  Settings, User, LogOut, Zap, ChevronRight
+  Settings, User, LogOut, Zap, ChevronRight, Building2, Users
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/documents", label: "Documents", icon: FileText },
-  { href: "/projects", label: "Projects", icon: FolderOpen },
   { href: "/billcheck", label: "BillCheck", icon: ReceiptText },
   { href: "/field-progress", label: "Field Progress", icon: MapPinned },
   { href: "/saved-drafts", label: "Saved drafts", icon: ClipboardCheck },
 ];
 
 const bottomItems = [
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/projects", label: "Projects / sites", icon: FolderOpen },
+  { href: "/team", label: "Project team", icon: Users },
+  { href: "/organization", label: "Organization", icon: Building2 },
   { href: "/profile", label: "Profile", icon: User },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { ChevronLeft, ChevronRight, LoaderCircle, Minus, Plus } from "lucide-react";
+import { EpcxSpinner } from "@/components/ui/EpcxSpinner";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist/types/src/display/api";
 import type { JointEvent, JointRecord } from "@/lib/field-progress/core";
 
@@ -111,7 +112,7 @@ export function PdfDrawingViewer({ source, drawingNumber, revision, joints, late
       </div>
     </div>
     <div ref={scrollRef} className="relative max-h-[70vh] min-h-[440px] overflow-auto p-3" style={{ touchAction: "pan-x pan-y" }}>
-      {(loading || !document) && !error ? <div className="flex min-h-[420px] items-center justify-center gap-2 text-sm text-slate-600"><LoaderCircle className="animate-spin" size={18}/>Loading drawing securely…</div> : error ? <div role="alert" className="p-6 text-sm text-red-800">PDF preview is unavailable in this browser. Use the searchable register and normalized coordinate fields below. <span className="block pt-1 text-xs">{error}</span></div> : <div className="relative mx-auto shadow-lg" style={{ width: canvasSize.width, height: canvasSize.height }} onClick={handlePageClick}>
+      {(loading || !document) && !error ? <div className="flex min-h-[420px] items-center justify-center gap-2 text-sm text-slate-600"><EpcxSpinner size="sm" inline label="Loading drawing securely…" /></div> : error ? <div role="alert" className="p-6 text-sm text-red-800">PDF preview is unavailable in this browser. Use the searchable register and normalized coordinate fields below. <span className="block pt-1 text-xs">{error}</span></div> : <div className="relative mx-auto shadow-lg" style={{ width: canvasSize.width, height: canvasSize.height }} onClick={handlePageClick}>
         <canvas ref={canvasRef} aria-label={`Drawing page ${page}`}/>
         {pageJoints.map((joint) => { const key = joint.jointId ?? joint.id; const stage = latest.get(key)?.stage ?? "Needs review"; return <button key={joint.id} title={`${key}: ${stage}`} aria-label={`Select joint ${key}, ${stage}`} onClick={(event) => { event.stopPropagation(); onSelect(joint); }} className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white px-1.5 py-1 text-[9px] font-bold shadow ${stage === "Accepted" || stage === "Released" ? "bg-emerald-700 text-white" : stage === "Needs review" ? "bg-slate-700 text-white" : "bg-amber-500 text-slate-950"}`} style={{ left: `${joint.x! * 100}%`, top: `${joint.y! * 100}%` }}>{key}</button>; })}
         {pinMode && <div aria-hidden="true" className="pointer-events-none absolute inset-0 border-2 border-dashed border-emerald-700/50 bg-emerald-900/5"/>}

@@ -13,6 +13,7 @@ const navLinks = [
   { href: "/#how-it-works", label: "How it works" },
   { href: "/#field-teams", label: "For Teams" },
   { href: "/#examples", label: "Examples" },
+  { href: "/pricing", label: "Plans" },
   { href: "/contact", label: "Contact" },
 ];
 
@@ -48,8 +49,8 @@ export function Navbar() {
         "fixed top-0 left-0 right-0 z-50 transition-all duration-300 motion-reduce:transition-none",
         scrolled
           ? isLightHome
-            ? "bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm"
-            : "bg-white/90 dark:bg-brand-950/90 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50 shadow-sm"
+            ? "bg-white/95 backdrop-blur-md"
+            : "bg-white/90 dark:bg-brand-950/90 backdrop-blur-md"
           : "bg-transparent"
       )}
     >

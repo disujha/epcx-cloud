@@ -4,6 +4,8 @@ import {
   getDoc,
   getDocs,
   addDoc,
+  arrayUnion,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -21,6 +23,8 @@ import type {
   Document as EPCDocument,
   Review,
   Organization,
+  ProjectRole,
+  ProjectInvitation,
 } from "@/types/firebase";
 
 // ─── Generic Helpers ──────────────────────────────────────────────────────────
@@ -79,22 +83,82 @@ export async function updateUserProfile(
   });
 }
 
+export async function saveProfessionalProfile(uid: string, data: Partial<UserProfile> & { email: string; displayName: string }) {
+  const exists = await getDoc(doc(db, "users", uid));
+  return setDoc(doc(db, "users", uid), {
+    uid,
+    ...data,
+    updatedAt: serverTimestamp(),
+    ...(!exists.exists() ? { createdAt: serverTimestamp() } : {}),
+  }, { merge: true });
+}
+
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
 export async function getUserProjects(uid: string): Promise<Project[]> {
-  return getDocuments<Project>(
-    "projects",
-    where("ownerId", "==", uid),
-    orderBy("createdAt", "desc")
-  );
+  const ref = collection(db, "projects");
+  const [owned, member] = await Promise.all([
+    getDocs(query(ref, where("ownerId", "==", uid))),
+    getDocs(query(ref, where("memberIds", "array-contains", uid))),
+  ]);
+  const unique = new Map<string, Project>();
+  for (const snap of [...owned.docs, ...member.docs]) unique.set(snap.id, { id: snap.id, ...snap.data() } as Project);
+  return [...unique.values()].sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")));
 }
 
-export async function createProject(data: Omit<Project, "id" | "createdAt" | "updatedAt">) {
-  return addDoc(collection(db, "projects"), {
+export async function createProject(data: { name: string; ownerId: string } & Partial<Omit<Project, "id" | "name" | "ownerId" | "createdAt" | "updatedAt">>) {
+  const ref = doc(collection(db, "projects"));
+  await setDoc(ref, {
     ...data,
+    memberIds: [data.ownerId],
+    members: { [data.ownerId]: "project_admin" },
+    status: data.status ?? "active",
+    documentCount: 0,
+    tags: [],
+    industry: "other",
+    createdBy: data.ownerId,
+    updatedBy: data.ownerId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  return ref;
+}
+
+export async function createOrganization(input: { name: string; companyDetails?: string; logoURL?: string; uid: string }) {
+  const ref = doc(collection(db, "organizations"));
+  await setDoc(ref, {
+    name: input.name.trim(), companyDetails: input.companyDetails ?? "", logoURL: input.logoURL ?? "",
+    memberIds: [input.uid], adminIds: [input.uid], plan: "starter", industry: "other",
+    settings: { privateDeployment: false, maxDocuments: 1000, maxStorage: 10 },
+    createdBy: input.uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  return ref;
+}
+
+export async function createProjectInvitation(input: { project: Project; email: string; role: ProjectRole; invitedBy: string; organizationName?: string }) {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const ref = doc(collection(db, "projectInvitations"));
+  await setDoc(ref, {
+    projectId: input.project.id, projectName: input.project.name,
+    organizationId: input.project.organizationId ?? "", organizationName: input.organizationName ?? "",
+    email: normalizedEmail, role: input.role, invitedBy: input.invitedBy,
+    status: "pending", createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function getPendingProjectInvitations(email: string): Promise<ProjectInvitation[]> {
+  return getDocuments<ProjectInvitation>("projectInvitations", where("email", "==", email.trim().toLowerCase()), where("status", "==", "pending"));
+}
+
+export async function acceptProjectInvitation(invitation: ProjectInvitation, uid: string) {
+  const batch = (await import("firebase/firestore")).writeBatch(db);
+  batch.update(doc(db, "projects", invitation.projectId), {
+    memberIds: arrayUnion(uid), [`members.${uid}`]: invitation.role,
+    updatedAt: serverTimestamp(), updatedBy: uid, acceptedInvitationId: invitation.id,
+  });
+  batch.update(doc(db, "projectInvitations", invitation.id), { status: "accepted", acceptedBy: uid, updatedAt: serverTimestamp() });
+  await batch.commit();
 }
 
 export async function updateProject(projectId: string, data: Partial<Project>) {
@@ -132,6 +196,8 @@ export async function createDocument(
 ) {
   return addDoc(collection(db, "documents"), {
     ...data,
+    createdBy: data.uploadedBy,
+    updatedBy: data.uploadedBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -139,10 +205,12 @@ export async function createDocument(
 
 export async function updateDocumentStatus(
   docId: string,
-  status: EPCDocument["status"]
+  status: EPCDocument["status"],
+  updatedBy?: string
 ) {
   return updateDoc(doc(db, "documents", docId), {
     status,
+    ...(updatedBy ? { updatedBy } : {}),
     updatedAt: serverTimestamp(),
   });
 }
@@ -161,14 +229,17 @@ export async function getUserReviews(uid: string): Promise<Review[]> {
 export async function createReview(data: Omit<Review, "id" | "createdAt" | "updatedAt">) {
   return addDoc(collection(db, "reviews"), {
     ...data,
+    createdBy: data.userId,
+    updatedBy: data.userId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 }
 
-export async function updateReview(reviewId: string, data: Partial<Review>) {
+export async function updateReview(reviewId: string, data: Partial<Review>, updatedBy?: string) {
   return updateDoc(doc(db, "reviews", reviewId), {
     ...data,
+    ...(updatedBy ? { updatedBy } : {}),
     updatedAt: serverTimestamp(),
   });
 }

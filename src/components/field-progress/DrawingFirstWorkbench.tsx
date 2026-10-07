@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, ChevronLeft, ChevronRight, Circle, Copy, Crop, Eye, EyeOff, Highlighter, LoaderCircle, Lock, MousePointer2, MoveUpRight, MoreHorizontal, Pencil, Plus, RotateCcw, RotateCw, Save, Type, Undo2, Redo2, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Circle, Copy, Crop, Eye, EyeOff, FileText, Highlighter, LoaderCircle, Lock, MousePointer2, MoveUpRight, MoreHorizontal, Pencil, Plus, RotateCcw, RotateCw, Save, ShieldCheck, Type, Undo2, Redo2, Upload, X } from "lucide-react";
 import { downloadDocument, uploadDocument } from "@/lib/firebase/storage";
 import type { FieldProject } from "@/components/field-progress/FieldProjectProfile";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
 import { auth, db, storage } from "@/lib/firebase/config";
 import { extractText, type TextExtractionResult } from "@/lib/field-progress/text-extraction";
+import { useFieldWork } from "@/contexts/FieldWorkContext";
+import type { CentralWorkItem, WorkType } from "@/lib/field-progress/work-item-model";
+import { EpcxSpinner } from "@/components/ui/EpcxSpinner";
 
 type Tool = "select" | "mark" | "highlight" | "draw" | "arrow" | "text" | "crop" | "move";
 type MarkStatus = "In Progress" | "Complete";
@@ -16,11 +19,167 @@ type Mark = { id: string; x: number; y: number; page: number; kind: "mark" | "hi
 type WorkEvent = { id: string; ownerUid: string; workItemId: string; drawingId: string; action: "created" | "status_changed" | "renamed" | "moved" | "deleted" | "reopened"; status?: MarkStatus; localDate: string; timestamp: string; userUid: string };
 type LocalDrawing = { id: string; file?: File; snapshot: Record<string, unknown> };
 const accepted = ".pdf,.jpg,.jpeg,.png,.webp";
-const isPdf = (file: File) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+const isPdf = (file?: File | Blob | null) => {
+  if (!file) return false;
+  if (file.type === "application/pdf") return true;
+  if ("name" in file && typeof file.name === "string" && file.name.toLowerCase().endsWith(".pdf")) return true;
+  return false;
+};
 const drawingStoragePath = (uid: string, drawingId: string) => `documents/${uid}/field-work/${drawingId}/source-drawing`;
 const maxDrawingBytes = 50 * 1024 * 1024;
 const drawingTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp"] as const;
 type DrawingContentType = (typeof drawingTypes)[number];
+
+async function generatePdfThumbnailFromFile(file: File | Blob): Promise<string | null> {
+  try {
+    const pdfjs = await import("pdfjs-dist");
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+    const arrayBuffer = await file.arrayBuffer();
+    const task = pdfjs.getDocument({ data: arrayBuffer });
+    const pdf = await task.promise;
+    const pageDoc = await pdf.getPage(1);
+    const baseViewport = pageDoc.getViewport({ scale: 1 });
+    const targetWidth = 320;
+    const scale = targetWidth / Math.max(1, baseViewport.width);
+    const viewport = pageDoc.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    const context = canvas.getContext("2d");
+    if (!context) {
+      await task.destroy();
+      return null;
+    }
+    await pageDoc.render({ canvas, canvasContext: context, viewport }).promise;
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+    await task.destroy();
+    return dataUrl;
+  } catch (err) {
+    console.warn("Could not generate PDF thumbnail", err);
+    return null;
+  }
+}
+
+async function generatePdfThumbnailFromUrl(fileUrl: string): Promise<string | null> {
+  try {
+    const pdfjs = await import("pdfjs-dist");
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+    const task = pdfjs.getDocument({ url: fileUrl });
+    const pdf = await task.promise;
+    const pageDoc = await pdf.getPage(1);
+    const baseViewport = pageDoc.getViewport({ scale: 1 });
+    const targetWidth = 320;
+    const scale = targetWidth / Math.max(1, baseViewport.width);
+    const viewport = pageDoc.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+    const context = canvas.getContext("2d");
+    if (!context) {
+      await task.destroy();
+      return null;
+    }
+    await pageDoc.render({ canvas, canvasContext: context, viewport }).promise;
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+    await task.destroy();
+    return dataUrl;
+  } catch (err) {
+    console.warn("Could not generate PDF thumbnail from URL", err);
+    return null;
+  }
+}
+
+async function generateImageThumbnailFromFile(file: File | Blob): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const targetWidth = 320;
+          const scale = Math.min(1, targetWidth / Math.max(1, img.naturalWidth));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(img.naturalWidth * scale);
+          canvas.height = Math.round(img.naturalHeight * scale);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            URL.revokeObjectURL(url);
+            resolve(null);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+          URL.revokeObjectURL(url);
+          resolve(dataUrl);
+        } catch {
+          URL.revokeObjectURL(url);
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(null);
+      };
+      img.src = url;
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function isPdfDrawingSnapshot(snapshot: Record<string, unknown>) {
+  const mime = String(snapshot.mimeType ?? snapshot.contentType ?? "").toLowerCase();
+  const fileName = String(snapshot.fileName ?? "").toLowerCase();
+  return mime.includes("pdf") || snapshot.drawingType === "pdf" || fileName.endsWith(".pdf");
+}
+
+/**
+ * Ordered list of usable thumbnail sources for a drawing.
+ * Cloud thumbnail comes first (same priority as the Today screen), then local caches,
+ * then the original image itself for non-PDF drawings.
+ */
+function drawingThumbnailCandidates(
+  snapshot: Record<string, unknown>,
+  thumbnailsState: Record<string, string>,
+  userUid?: string,
+  currentId?: string,
+  currentUrl?: string
+): string[] {
+  const id = String(snapshot.id ?? "");
+  if (!id) return [];
+  const readLocal = (key: string) => { try { return localStorage.getItem(key) ?? ""; } catch { return ""; } };
+  const pdf = isPdfDrawingSnapshot(snapshot);
+  const list = [
+    snapshot.thumbnail,
+    thumbnailsState[id],
+    userUid ? readLocal(`epcx-drawing-thumb:${userUid}:${id}`) : "",
+    snapshot.thumbnailURL,
+    snapshot.previewURL,
+    !pdf && id === currentId ? currentUrl : "",
+    !pdf ? snapshot.downloadURL : "",
+    !pdf ? snapshot.image : "",
+    !pdf && userUid ? readLocal(`epcx-drawing-cloud:${userUid}:${id}`) : "",
+  ];
+  const seen = new Set<string>();
+  return list.filter((value): value is string => {
+    if (typeof value !== "string" || !value.trim() || seen.has(value)) return false;
+    // Object URLs only survive for the drawing currently open in this tab.
+    if (value.startsWith("blob:") && value !== currentUrl) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
+function resolveDrawingThumbnail(
+  snapshot: Record<string, unknown>,
+  thumbnailsState: Record<string, string>,
+  userUid?: string,
+  currentId?: string,
+  currentUrl?: string,
+  failed?: Set<string>
+): string | null {
+  return drawingThumbnailCandidates(snapshot, thumbnailsState, userUid, currentId, currentUrl).find((src) => !failed?.has(src)) ?? null;
+}
 
 async function detectDrawingContentType(file: File): Promise<DrawingContentType | null> {
   const bytes = new Uint8Array(await file.slice(0, 12).arrayBuffer());
@@ -143,8 +302,10 @@ async function appendCloudWorkEvents(ownerUid: string, drawingId: string, events
   }
 }
 
-export function DrawingFirstWorkbench({ initialView = "drawings", initialAction = "", project }: { initialView?: "drawings" | "today"; initialAction?: "drawing" | ""; project?: FieldProject } = {}) {
+export function DrawingFirstWorkbench({ initialView = "drawings", initialAction = "", project }: { initialView?: "drawings" | "today" | "history"; initialAction?: "drawing" | ""; project?: FieldProject } = {}) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const photoCaptureRef = useRef<HTMLInputElement>(null);
+  const docCaptureRef = useRef<HTMLInputElement>(null);
   const initialActionHandled = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -153,7 +314,12 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
   const [url, setUrl] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [drawingSessions, setDrawingSessions] = useState<Record<string, Record<string, unknown>>>({});
-  const [workspaceView, setWorkspaceView] = useState<"drawings" | "today">(initialView);
+  const [workspaceView, setWorkspaceView] = useState<"drawings" | "today">(initialView === "drawings" ? "drawings" : "today");
+  const [drawingTab, setDrawingTab] = useState<"today" | "history">(initialView === "history" ? "history" : "today");
+  const [drawingThumbnails, setDrawingThumbnails] = useState<Record<string, string>>({});
+  const [failedThumbs, setFailedThumbs] = useState<Set<string>>(() => new Set());
+  const generatingThumbnails = useRef(new Set<string>());
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [currentDrawingId, setCurrentDrawingId] = useState("");
   const [pendingFocusWorkItem, setPendingFocusWorkItem] = useState("");
   const [drawingName, setDrawingName] = useState("");
@@ -161,7 +327,10 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
   const [area, setArea] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingContentType, setPendingContentType] = useState<DrawingContentType | null>(null);
+  const fieldContext = useFieldWork();
   const [showDrawingDetails, setShowDrawingDetails] = useState(false);
+  const [enhancedView, setEnhancedView] = useState(false);
+  const [revisionWarning, setRevisionWarning] = useState("");
   const [detailsError, setDetailsError] = useState("");
   const [workEvents, setWorkEvents] = useState<WorkEvent[]>([]);
   const workEventsRef = useRef<WorkEvent[]>([]);
@@ -252,6 +421,57 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     }
   }
 
+  const requestThumbnailGeneration = useCallback((id: string, snapshot: Record<string, unknown>) => {
+    const existing = drawingThumbnails[id];
+    if (!user || user.isAnonymous || (existing && !failedThumbs.has(existing)) || generatingThumbnails.current.has(id)) return;
+    generatingThumbnails.current.add(id);
+
+    void (async () => {
+      try {
+        let sourceFile: File | undefined = undefined;
+        try {
+          const local = await localDrawingStore(`${user.uid}:${id}`);
+          sourceFile = local?.file;
+          if (!sourceFile) {
+            const rows = await localDrawingList(user.uid);
+            sourceFile = rows.find((r) => r.id === id)?.file;
+          }
+        } catch { /* ignore */ }
+
+        let thumb: string | null = null;
+        if (sourceFile) {
+          thumb = isPdf(sourceFile)
+            ? await generatePdfThumbnailFromFile(sourceFile)
+            : await generateImageThumbnailFromFile(sourceFile);
+        } else if (typeof snapshot.downloadURL === "string" && snapshot.downloadURL && isPdfDrawingSnapshot(snapshot)) {
+          thumb = await generatePdfThumbnailFromUrl(snapshot.downloadURL);
+        } else if (navigator.onLine && typeof snapshot.storagePath === "string") {
+          try {
+            sourceFile = await downloadDocument(snapshot.storagePath);
+            if (sourceFile) {
+              await localDrawingStore(`${user.uid}:${id}`, { file: sourceFile, snapshot });
+              thumb = isPdf(sourceFile)
+                ? await generatePdfThumbnailFromFile(sourceFile)
+                : await generateImageThumbnailFromFile(sourceFile);
+            }
+          } catch { /* downloadDocument failed */ }
+        }
+
+        if (thumb) {
+          localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${id}`, thumb);
+          setDrawingThumbnails((prev) => ({ ...prev, [id]: thumb }));
+          setDrawingSessions((prev) => prev[id] ? ({ ...prev, [id]: { ...prev[id], thumbnail: thumb } }) : prev);
+          if (navigator.onLine) {
+            void setDoc(doc(db, "users", user.uid, "fieldDrawings", id), { thumbnail: thumb }, { merge: true });
+          }
+        }
+      } catch (e) {
+        console.warn("Could not generate thumbnail for drawing", id, e);
+      }
+      // The id stays in generatingThumbnails so a failing source is not retried in a loop this session.
+    })();
+  }, [user, drawingThumbnails, failedThumbs]);
+
   function commitMarks(update: Mark[] | ((current: Mark[]) => Mark[]), message = "") {
     const current = marksRef.current;
     const next = typeof update === "function" ? update(current) : update;
@@ -260,6 +480,55 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     if (signedInOwner && drawingId) {
       const appended = workItemEventsBetween(current, next, signedInOwner, drawingId);
       if (appended.length) { const updatedEvents = [...workEventsRef.current, ...appended]; workEventsRef.current = updatedEvents; setWorkEvents(updatedEvents); }
+      
+      // Authoritative synchronization to central work item store
+      const now = new Date().toISOString();
+      const currentDrawingName = drawingName || fileRef.current?.name?.replace(/\.[^.]+$/, "") || "Drawing";
+      const workMarks = next.filter((m) => m.kind === "mark");
+      for (const m of workMarks) {
+        const existingCentral = fieldContext?.workItems.find((w) => w.id === m.id);
+        const centralItem: CentralWorkItem = {
+          id: m.id,
+          projectId: project?.id,
+          projectName: project?.name,
+          fieldDate: (m.createdAt || now).slice(0, 10),
+          discipline: (m.itemType?.toLowerCase() as WorkType) || "piping",
+          drawingId: drawingId || undefined,
+          drawingName: currentDrawingName,
+          drawingRevision: revision || undefined,
+          drawingLocation: { x: m.x, y: m.y, page: m.page },
+          lineId: m.line || "",
+          jointId: m.label || "",
+          description: m.label ? `Joint / item ${m.label}` : "Drawing marked work item",
+          quantity: 1,
+          unit: "ea",
+          status: m.status === "Complete" ? "Complete" : "In Progress",
+          progress: m.status === "Complete" ? 100 : 50,
+          createdFrom: "drawing",
+          sourceRecordId: m.id,
+          dprReported: Boolean(existingCentral?.dprReported),
+          dprId: existingCentral?.dprId,
+          dprDate: existingCentral?.dprDate,
+          crew: m.crew,
+          welder: m.welder,
+          remarks: m.crew ? `Crew: ${m.crew}` : undefined,
+          needsIdentification: !m.label || m.label.startsWith("WI-"),
+          photos: existingCentral?.photos,
+          documents: existingCentral?.documents,
+          history: [
+            ...(existingCentral?.history || []),
+            {
+              at: now,
+              action: `Status set to ${m.status === "Complete" ? "Complete" : "In Progress"} via drawing workbench`,
+              by: signedInOwner,
+              details: m.label ? `Joint / item ${m.label}` : "Drawing marked work item",
+            },
+          ].slice(-20),
+          createdAt: m.createdAt || existingCentral?.createdAt || now,
+          updatedAt: now,
+        };
+        void fieldContext?.addOrUpdateWorkItem(centralItem);
+      }
     }
     historyRef.current = { past: [...historyRef.current.past.slice(-49), { marks: current, rotation, file: fileRef.current }], future: [] };
     marksRef.current = next;
@@ -323,26 +592,63 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       if (activeUser.isAnonymous) return;
       if (fileRef.current) return;
       try {
-        const localRows = await localDrawingList(activeUser.uid);
-        const sessions: Record<string, Record<string, unknown>> = Object.fromEntries(localRows.map((row) => [row.id, row.snapshot]));
+        let localRows: LocalDrawing[] = [];
+        try { localRows = await localDrawingList(activeUser.uid); } catch { /* Browser storage unavailable; continue with cloud records. */ }
+        const sessions: Record<string, Record<string, unknown>> = Object.fromEntries(localRows.map((row) => [row.id, { ...row.snapshot, id: row.id }]));
+        const initialThumbs: Record<string, string> = {};
+        for (const row of localRows) {
+          const cached = localStorage.getItem(`epcx-drawing-thumb:${activeUser.uid}:${row.id}`);
+          if (cached) {
+            initialThumbs[row.id] = cached;
+          } else if (typeof row.snapshot?.thumbnail === "string" && row.snapshot.thumbnail) {
+            initialThumbs[row.id] = row.snapshot.thumbnail;
+            localStorage.setItem(`epcx-drawing-thumb:${activeUser.uid}:${row.id}`, row.snapshot.thumbnail);
+          } else if (row.file) {
+            const rowFile = row.file;
+            const rowId = row.id;
+            void (isPdf(rowFile) ? generatePdfThumbnailFromFile(rowFile) : generateImageThumbnailFromFile(rowFile)).then((thumb) => {
+              if (thumb) {
+                localStorage.setItem(`epcx-drawing-thumb:${activeUser.uid}:${rowId}`, thumb);
+                setDrawingThumbnails((prev) => ({ ...prev, [rowId]: thumb }));
+              }
+            });
+          }
+        }
+        setDrawingThumbnails((prev) => ({ ...initialThumbs, ...prev }));
         if (navigator.onLine) {
+          let remoteDocs: { id: string; data: Record<string, unknown> }[] = [];
           try {
             const remoteDrawings = await getDocs(collection(db, "users", activeUser.uid, "fieldDrawings"));
-            for (const remoteDrawing of remoteDrawings.docs) {
-              const id = remoteDrawing.id;
-              const remote = remoteDrawing.data() as Record<string, unknown>;
-              if (remote.ownerUid !== activeUser.uid || typeof remote.storagePath !== "string" || !remote.storagePath.startsWith(`documents/${activeUser.uid}/`)) continue;
+            remoteDocs = remoteDrawings.docs.map((entry) => ({ id: entry.id, data: entry.data() as Record<string, unknown> }));
+          } catch { /* Keep the local recovery copy available if cloud lookup is unavailable. */ }
+          // 1. Merge cloud metadata (thumbnail, downloadURL, storagePath) first so every history card can resolve an image.
+          for (const { id, data: remote } of remoteDocs) {
+            const local = sessions[id];
+            const remoteIsNewer = !local || String(remote.updatedAt ?? "") > String(local.updatedAt ?? "");
+            const merged = remoteIsNewer ? { ...local, ...remote } : { ...remote, ...local };
+            sessions[id] = {
+              ...merged,
+              id,
+              thumbnail: (typeof remote.thumbnail === "string" && remote.thumbnail) || (typeof local?.thumbnail === "string" && local.thumbnail) || undefined,
+              downloadURL: (typeof remote.downloadURL === "string" && remote.downloadURL) || (typeof local?.downloadURL === "string" && local.downloadURL) || undefined,
+              storagePath: (typeof remote.storagePath === "string" && remote.storagePath) || (typeof local?.storagePath === "string" && local.storagePath) || undefined,
+            };
+            if (typeof remote.downloadURL === "string" && remote.downloadURL) localStorage.setItem(`epcx-drawing-cloud:${activeUser.uid}:${id}`, remote.downloadURL);
+          }
+          setDrawingSessions({ ...sessions });
+          // 2. Merge work events per drawing; one failing lookup must not drop the remaining drawings.
+          await Promise.all(remoteDocs.map(async ({ id }) => {
+            try {
               const remoteEvents = await getDocs(collection(db, "users", activeUser.uid, "fieldDrawings", id, "workEvents"));
               const mergedEvents = new Map<string, WorkEvent>();
               for (const eventDoc of remoteEvents.docs) mergedEvents.set(eventDoc.id, eventDoc.data() as WorkEvent);
-              const localEvents = Array.isArray(sessions[id]?.workEvents) ? sessions[id].workEvents as WorkEvent[] : [];
-              for (const event of localEvents) if (!mergedEvents.has(event.id)) mergedEvents.set(event.id, event);
-              const preferred = !sessions[id] || String(remote.updatedAt ?? "") > String(sessions[id].updatedAt ?? "") ? remote : sessions[id];
-              sessions[id] = { ...preferred, workEvents: [...mergedEvents.values()] };
-            }
-          } catch { /* Keep the local recovery copy available if cloud lookup is unavailable. */ }
+              const existingEvents = Array.isArray(sessions[id]?.workEvents) ? sessions[id].workEvents as WorkEvent[] : [];
+              for (const event of existingEvents) if (!mergedEvents.has(event.id)) mergedEvents.set(event.id, event);
+              sessions[id] = { ...sessions[id], workEvents: [...mergedEvents.values()] };
+            } catch { /* Keep embedded/local work events for this drawing. */ }
+          }));
         }
-        setDrawingSessions(sessions);
+        setDrawingSessions({ ...sessions });
         const requestedId = localStorage.getItem(`epcx-current-drawing:${activeUser.uid}`);
         const snapshot = (requestedId && sessions[requestedId]) || Object.values(sessions).sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))[0];
         if (!snapshot || typeof snapshot.id !== "string") return;
@@ -369,6 +675,27 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (!user || user.isAnonymous) return;
+    const list = Object.values(drawingSessions);
+    for (const snap of list) {
+      const snapId = String(snap.id ?? "");
+      if (snapId && !resolveDrawingThumbnail(snap, drawingThumbnails, user.uid, currentDrawingId, url, failedThumbs)) {
+        requestThumbnailGeneration(snapId, snap);
+      }
+    }
+  }, [drawingSessions, drawingThumbnails, user, currentDrawingId, url, failedThumbs, requestThumbnailGeneration]);
+
+  function handleThumbnailError(drawingId: string, src: string) {
+    setFailedThumbs((prev) => { if (prev.has(src)) return prev; const next = new Set(prev); next.add(src); return next; });
+    if (!user) return;
+    try {
+      for (const key of [`epcx-drawing-thumb:${user.uid}:${drawingId}`, `epcx-drawing-cloud:${user.uid}:${drawingId}`]) {
+        if (localStorage.getItem(key) === src) localStorage.removeItem(key);
+      }
+    } catch { /* noop */ }
+  }
 
   useEffect(() => {
     function shortcut(event: KeyboardEvent) {
@@ -430,8 +757,8 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       try {
         const detectedType = await detectDrawingContentType(file);
         if (!detectedType) throw Object.assign(new Error("Unsupported or mismatched file content."), { code: "field-progress/unsupported-file" });
-        contentType = detectedType;
-        const snapshot = { id: drawingId, ownerUid: user.uid, name: drawingName.trim() || file.name.replace(/\.[^.]+$/, ""), revision: revision.trim(), area: area.trim(), fileName: file.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(user.uid, drawingId), projectId: project?.id || null, projectName: project?.name || "", page, pageCount: contentType === "application/pdf" ? pages : 1, zoom, rotation, marks, workItems: marks.filter((mark) => mark.kind === "mark").map((mark) => ({ ...mark, ownerUid: user.uid, drawingId, pageIndex: mark.page, annotationId: mark.id, createdAt: mark.createdAt ?? savedAt, updatedAt: mark.updatedAt ?? savedAt })), workEvents, createdAt, updatedAt: savedAt, storagePending: true };
+        const cachedThumb = localStorage.getItem(`epcx-drawing-thumb:${user.uid}:${drawingId}`) || drawingThumbnails[drawingId] || undefined;
+        const snapshot = { id: drawingId, ownerUid: user.uid, name: drawingName.trim() || file.name.replace(/\.[^.]+$/, ""), revision: revision.trim(), area: area.trim(), fileName: file.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(user.uid, drawingId), projectId: project?.id || null, projectName: project?.name || "", page, pageCount: contentType === "application/pdf" ? pages : 1, zoom, rotation, marks, workItems: marks.filter((mark) => mark.kind === "mark").map((mark) => ({ ...mark, ownerUid: user.uid, drawingId, pageIndex: mark.page, annotationId: mark.id, createdAt: mark.createdAt ?? savedAt, updatedAt: mark.updatedAt ?? savedAt })), workEvents, thumbnail: cachedThumb, createdAt, updatedAt: savedAt, storagePending: true };
         stage = "local recovery";
         await localDrawingStore(`${user.uid}:${drawingId}`, { file, snapshot });
         localStorage.setItem(`epcx-drawing-session:${user.uid}`, JSON.stringify(snapshot));
@@ -440,10 +767,11 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
         if (!localStorage.getItem(cloudKey)) setSyncState("uploading");
         stage = "Storage upload";
         const downloadURL = await ensureCloudDrawing(file, user.uid, drawingId);
-        const storedPending = { ...snapshot, downloadURL, storagePending: true };
+        const latestThumb = localStorage.getItem(`epcx-drawing-thumb:${user.uid}:${drawingId}`) || drawingThumbnails[drawingId] || cachedThumb || undefined;
+        const storedPending = { ...snapshot, downloadURL, thumbnail: latestThumb, storagePending: true };
         localStorage.setItem(`epcx-drawing-session:${user.uid}`, JSON.stringify(storedPending));
         await localDrawingStore(`${user.uid}:${drawingId}`, { file, snapshot: storedPending });
-        const synced = { ...storedPending, storagePending: false };
+        const synced = { ...storedPending, thumbnail: latestThumb, storagePending: false };
         stage = "Firestore metadata";
         await appendCloudWorkEvents(user.uid, drawingId, workEvents);
         await setDoc(doc(db, "users", user.uid, "fieldDrawings", drawingId), synced, { merge: true });
@@ -484,7 +812,29 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       if (!context) return;
       context.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
       await pageDoc.render({ canvas, canvasContext: context, viewport }).promise;
-      if (!cancelled) setPdfPage({ width: viewport.width, height: viewport.height, data: context.getImageData(0, 0, canvas.width, canvas.height) });
+      if (!cancelled) {
+        setPdfPage({ width: viewport.width, height: viewport.height, data: context.getImageData(0, 0, canvas.width, canvas.height) });
+        if (page === 1) {
+          try {
+            const thumbW = 320;
+            const thumbH = Math.max(160, Math.round((thumbW * viewport.height) / Math.max(1, viewport.width)));
+            const thumbCanvas = document.createElement("canvas");
+            thumbCanvas.width = thumbW;
+            thumbCanvas.height = thumbH;
+            const thumbCtx = thumbCanvas.getContext("2d");
+            if (thumbCtx) {
+              thumbCtx.drawImage(canvas, 0, 0, thumbW, thumbH);
+              const thumbUrl = thumbCanvas.toDataURL("image/jpeg", 0.72);
+              const activeId = localStorage.getItem(`epcx-current-drawing:${user?.uid ?? ""}`) || currentDrawingId;
+              if (activeId && user?.uid) {
+                localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${activeId}`, thumbUrl);
+                setDrawingThumbnails((prev) => ({ ...prev, [activeId]: thumbUrl }));
+                setDrawingSessions((prev) => prev[activeId] ? ({ ...prev, [activeId]: { ...prev[activeId], thumbnail: thumbUrl } }) : prev);
+              }
+            }
+          } catch { /* non-blocking */ }
+        }
+      }
       await task.destroy();
     }).catch((reason: unknown) => { if (!cancelled) setError(reason instanceof Error ? reason.message : "Could not open this PDF."); });
     return () => { cancelled = true; if (task) void task.destroy(); };
@@ -500,10 +850,30 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     try {
       const detectedType = await detectDrawingContentType(next);
       if (!detectedType) { setError("The file contents don’t match a supported PDF, JPG, PNG or WEBP drawing."); return; }
+      const baseName = next.name.replace(/\.[^.]+$/, "");
       setPendingFile(next);
       setPendingContentType(detectedType);
-      setDrawingName(next.name.replace(/\.[^.]+$/, ""));
-      setRevision(""); setArea(""); setDetailsError(""); setShowDrawingDetails(true);
+      
+      const revMatch = baseName.match(/(?:rev|r)[\s._-]?([0-9a-zA-Z]+)/i);
+      const detectedRev = revMatch ? `Rev ${revMatch[1].toUpperCase()}` : "";
+      const lineMatch = baseName.match(/\b(\d{1,4}-[A-Za-z]{1,4}-\d{1,5})\b/);
+      const detectedArea = lineMatch ? lineMatch[1] : "";
+      
+      setDrawingName(baseName.replace(/[-_]?(?:rev|r)[\s._-]?([0-9a-zA-Z]+)/i, "").trim() || baseName);
+      setRevision(detectedRev);
+      setArea(detectedArea);
+      setDetailsError("");
+      
+      const existing = Object.values(drawingSessions).find((s) => 
+        String(s.name || s.fileName || "").toLowerCase().includes(baseName.toLowerCase().slice(0, 8))
+      );
+      if (existing && existing.revision && detectedRev && existing.revision !== detectedRev) {
+        setRevisionWarning(`Note: An existing revision (${existing.revision}) was found for this drawing.`);
+      } else {
+        setRevisionWarning("");
+      }
+      
+      setShowDrawingDetails(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not open this drawing."); }
   }
 
@@ -512,6 +882,14 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     const drawingId = crypto.randomUUID();
     setCurrentDrawingId(drawingId);
     localStorage.setItem(`epcx-current-drawing:${user.uid}`, drawingId);
+    const isPdfFile = isPdf(next);
+    void (isPdfFile ? generatePdfThumbnailFromFile(next) : generateImageThumbnailFromFile(next)).then((thumb) => {
+      if (thumb && user?.uid) {
+        localStorage.setItem(`epcx-drawing-thumb:${user.uid}:${drawingId}`, thumb);
+        setDrawingThumbnails((prev) => ({ ...prev, [drawingId]: thumb }));
+        setDrawingSessions((prev) => prev[drawingId] ? ({ ...prev, [drawingId]: { ...prev[drawingId], thumbnail: thumb } }) : prev);
+      }
+    });
     const createdAt = new Date().toISOString();
     const contentType = pendingContentType ?? ((next.type && drawingTypes.includes(next.type as DrawingContentType) ? next.type : isPdf(next) ? "application/pdf" : "image/jpeg") as DrawingContentType);
     const initialSnapshot = { id: drawingId, ownerUid: user.uid, name: drawingName.trim() || next.name.replace(/\.[^.]+$/, ""), revision: revision.trim(), area: area.trim(), fileName: next.name, contentType, mimeType: contentType, drawingType: contentType === "application/pdf" ? "pdf" : "image", storagePath: drawingStoragePath(user.uid, drawingId), projectId: project?.id || null, projectName: project?.name || "", page: 1, pageCount: 1, zoom: 1, rotation: 0, marks: [], workItems: [], workEvents: [], createdAt, updatedAt: createdAt, storagePending: true };
@@ -523,6 +901,55 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     setPage(1); setPages(1); setZoom(1); setPanOffset({ x: 0, y: 0 }); setRotation(0); setCropStart(null); setCropRegion(null); setSaved(false); setSelectedId("");
     setHintVisible(!sessionStorage.getItem("epcx-workbench-mark-hint"));
     setSyncState("saving"); setWorkspaceView("drawings"); setWorkListOpen(false); setShowDrawingDetails(false); setPendingFile(null); setPendingContentType(null);
+  }
+
+  async function handleContextualCapture(type: "PHOTO" | "DOCUMENT", selectedFile?: File) {
+    if (!selectedFile || !user || user.isAnonymous) return;
+    const drawingId = currentDrawingId;
+    const activeItem = editing || marks.find((m) => m.id === selectedId);
+    const itemLabel = activeItem?.label?.trim() || "";
+    const id = crypto.randomUUID();
+    const timestamp = new Date().toISOString();
+    const date = localDateKey();
+    const path = `documents/${user.uid}/field-records/${id}/original`;
+    setToast(`Uploading ${type === "PHOTO" ? "photo" : "document"}…`);
+    try {
+      const downloadURL = await uploadDocument(selectedFile, user.uid, null, () => {}, {
+        folder: `field-records/${id}`,
+        objectName: "original",
+      });
+      const record = {
+        id,
+        ownerUid: user.uid,
+        createdBy: user.uid,
+        updatedBy: user.uid,
+        type,
+        title: itemLabel ? `${itemLabel} - ${selectedFile.name.replace(/\.[^.]+$/, "")}` : selectedFile.name.replace(/\.[^.]+$/, ""),
+        fileName: selectedFile.name,
+        filePath: path,
+        downloadURL,
+        mimeType: selectedFile.type || "application/octet-stream",
+        recordDate: date,
+        documentDate: date,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        projectId: project?.id || null,
+        projectName: project?.name || "",
+        drawingId: drawingId || null,
+        drawingName: drawingName || null,
+        workItemId: activeItem?.id || null,
+        workItemLabel: itemLabel || null,
+        area: area || "",
+        tags: [drawingName, itemLabel].filter(Boolean),
+      };
+      await setDoc(doc(db, "users", user.uid, "fieldDocuments", id), record);
+      setToast(`${type === "PHOTO" ? "Photo" : "Document"} attached to ${itemLabel || drawingName || "drawing"}.`);
+    } catch {
+      setToast("Upload failed. Check your connection.");
+    } finally {
+      setAddMenuOpen(false);
+      window.setTimeout(() => setToast(""), 3500);
+    }
   }
 
   function confirmDrawingDetails(event: FormEvent<HTMLFormElement>) {
@@ -665,7 +1092,9 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     if (tool === "draw") setDrawingPoints([p]);
     if (tool === "mark") {
       const now = new Date().toISOString();
-      const mark: Mark = { id: crypto.randomUUID(), ...p, page, kind: "mark", status: "In Progress", itemType: "Other", label: pendingItemLabel, line: pendingLine, createdAt: now, updatedAt: now };
+      const existingMarks = marksRef.current.filter((m) => m.kind === "mark");
+      const autoLabel = pendingItemLabel.trim() || `J-${String(existingMarks.length + 1).padStart(2, "0")}`;
+      const mark: Mark = { id: crypto.randomUUID(), ...p, page, kind: "mark", status: "In Progress", itemType: "Joint", label: autoLabel, line: pendingLine, createdAt: now, updatedAt: now };
       commitMarks((old) => [...old, { ...mark, history: [{ action: "Created", at: now }] }], "Work item marked"); setSelectedId(mark.id); setEditing({ ...mark, history: [{ action: "Created", at: now }] }); setPendingLine(""); setPendingItemLabel(""); setHintVisible(false); sessionStorage.setItem("epcx-workbench-mark-hint", "1");
     }
     if (tool === "text") { setLocalText(""); setEditing({ id: crypto.randomUUID(), ...p, page, kind: "text", label: "" }); }
@@ -927,31 +1356,193 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     return { left, top, right: "auto" };
   }
 
+  const isCurrentDrawingToday = Boolean(currentDrawingId && (
+    todayItems.some((e) => e.drawingId === currentDrawingId) ||
+    (drawingSessions[currentDrawingId]?.updatedAt && String(drawingSessions[currentDrawingId]?.updatedAt).slice(0, 10) === localDateKey())
+  ));
+
   return <main className="drawing-first">
     <aside className="drawing-workspace-rail">
-      <Link href="/" className="drawing-logo">EPCX<span>.cloud</span></Link>
       <button className="drawing-add-button" onClick={() => inputRef.current?.click()} disabled={!user || user.isAnonymous}><Plus size={16}/> Add Drawing</button>
       <input ref={inputRef} className="sr-only" type="file" accept={accepted} onChange={(event) => void openFile(event.target.files?.[0])}/>
-      <button className={`drawing-nav-item ${workspaceView === "today" ? "active" : ""}`} onClick={() => setWorkspaceView("today")}><span className="drawing-nav-dot"/>Today<span className="drawing-nav-count">{todayItems.length || ""}</span></button>
-      <p className="drawing-rail-heading">DRAWINGS</p>
+      <input ref={photoCaptureRef} className="sr-only" type="file" accept="image/*" onChange={(event) => void handleContextualCapture("PHOTO", event.target.files?.[0])}/>
+      <input ref={docCaptureRef} className="sr-only" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={(event) => void handleContextualCapture("DOCUMENT", event.target.files?.[0])}/>
+
+      <div className="drawing-rail-tabs">
+        <button
+          className={`drawing-nav-item ${workspaceView === "today" && drawingTab === "today" ? "active" : ""}`}
+          onClick={() => { setWorkspaceView("today"); setDrawingTab("today"); }}
+        >
+          <span className="drawing-nav-dot"/>Today<span className="drawing-nav-count">{todayItems.length || ""}</span>
+        </button>
+        <button
+          className={`drawing-nav-item ${workspaceView === "today" && drawingTab === "history" ? "active" : ""}`}
+          onClick={() => { setWorkspaceView("today"); setDrawingTab("history"); }}
+        >
+          <span className="drawing-nav-dot"/>History<span className="drawing-nav-count">{drawingRows.length || ""}</span>
+        </button>
+      </div>
+
+      <p className="drawing-rail-heading">ALL DRAWINGS</p>
       <div className="drawing-rail-list">{drawingRows.map((snapshot) => {
         const id = String(snapshot.id ?? "");
         if (!id) return null;
         const active = id === currentDrawingId;
-        const hasThumbnail = typeof snapshot.downloadURL === "string" && String(snapshot.mimeType ?? snapshot.contentType ?? "").startsWith("image/");
+        const thumb = resolveDrawingThumbnail(snapshot, drawingThumbnails, user?.uid, currentDrawingId, url, failedThumbs);
         return <button key={id} className={`drawing-library-item ${active ? "active" : ""}`} onClick={() => void openDrawing(id)}>
-          <span className="drawing-library-thumb">{active && url && !String(snapshot.mimeType ?? snapshot.contentType ?? "").includes("pdf") ? <img src={url} alt=""/> : hasThumbnail ? <img src={String(snapshot.downloadURL)} alt=""/> : <small>{String(snapshot.mimeType ?? snapshot.contentType ?? "").includes("pdf") ? "PDF" : "IMG"}</small>}</span>
+          <span className="drawing-library-thumb">
+            {thumb ? (
+              <img src={thumb} alt="" onError={() => handleThumbnailError(id, thumb)} />
+            ) : (
+              <small>{String(snapshot.mimeType ?? snapshot.contentType ?? "").includes("pdf") ? "PDF" : "DWG"}</small>
+            )}
+          </span>
           <span><b>{String(snapshot.name ?? snapshot.fileName ?? "Drawing").replace(/\.[^.]+$/, "")}</b><small>{snapshot.revision ? `Rev ${String(snapshot.revision)}` : "Drawing"}</small></span>
         </button>;
       })}{drawingRows.length === 0 && <p className="drawing-rail-empty">Your drawings will appear here.</p>}</div>
       <div className="drawing-rail-account">{user?.displayName || user?.email || "Signed in"}</div>
     </aside>
     <div className="drawing-workspace-area">
-    {workspaceView === "today" ? <section className="drawing-today-view">
-      <header><p className="drawing-eyebrow">FIELD WORKSPACE / TODAY</p><h1>Today</h1><p>{todayItems.length} work items updated today across your drawings.</p></header>
-      <div className="drawing-today-summary"><article><b>{todayItems.length}</b><span>Work items updated</span></article><article><b>{completedToday}</b><span>Complete</span></article><article><b>{inProgressToday}</b><span>In Progress</span></article></div>
-      {todayGroups.size ? <div className="drawing-today-groups">{[...todayGroups.entries()].map(([drawingId, rows]) => <section key={drawingId}><header><div><h2>{rows[0].drawingName}</h2><p>{rows[0].revision ? `Rev ${rows[0].revision} · ` : ""}{rows.length} updated today</p></div><button onClick={() => { setWorkspaceView("drawings"); void openDrawing(drawingId); }}>Open drawing <ArrowRight size={14}/></button></header><div>{rows.map(({ event, item }) => <button key={event.id} className="drawing-today-row" onClick={() => { setWorkspaceView("drawings"); if (event.drawingId === currentDrawingId) setPendingFocusWorkItem(event.workItemId); else void openDrawing(event.drawingId).then(() => setPendingFocusWorkItem(event.workItemId)); }}><span className={`drawing-today-status ${event.status === "Complete" ? "complete" : "progress"}`}>{event.status === "Complete" ? <Check size={12}/> : "•"}</span><span><b>{item?.label?.trim() || "Unnamed"}</b><small>{item?.itemType ?? "Other"}{item?.line ? ` · ${item.line}` : ""}</small></span><em>{event.status ?? "In Progress"}</em></button>)}</div></section>)}</div> : <div className="drawing-today-empty"><p>No work items updated today.</p><button onClick={() => setWorkspaceView("drawings")}>Go to drawings</button></div>}
-    </section> : !file ? <div className="drawing-start-screen">
+    {workspaceView === "today" ? (
+      <section className="drawing-today-view">
+        <header>
+          <p className="drawing-eyebrow">FIELD WORKBENCH / DRAWING LIBRARY</p>
+          <div className="flex items-center justify-between gap-4">
+            <h1>Drawings</h1>
+            <div className="drawing-library-subtabs">
+              <button
+                className={drawingTab === "today" ? "active" : ""}
+                onClick={() => setDrawingTab("today")}
+              >
+                Today ({todayGroups.size})
+              </button>
+              <button
+                className={drawingTab === "history" ? "active" : ""}
+                onClick={() => setDrawingTab("history")}
+              >
+                Previous / History ({drawingRows.length})
+              </button>
+            </div>
+          </div>
+          <p>
+            {drawingTab === "today"
+              ? `${todayItems.length} work items updated today across your active drawings.`
+              : "Revisit previous drawings, revisions, and historical site markups."}
+          </p>
+        </header>
+
+        {drawingTab === "today" ? (
+          <>
+            <div className="drawing-today-summary">
+              <article><b>{todayItems.length}</b><span>Work items updated</span></article>
+              <article><b>{completedToday}</b><span>Complete</span></article>
+              <article><b>{inProgressToday}</b><span>In Progress</span></article>
+            </div>
+            {todayGroups.size ? (
+              <div className="drawing-today-groups">
+                {[...todayGroups.entries()].map(([drawingId, rows]) => (
+                  <section key={drawingId}>
+                    <header>
+                      <div>
+                        <h2>{rows[0].drawingName}</h2>
+                        <p>{rows[0].revision ? `Rev ${rows[0].revision} · ` : ""}{rows.length} updated today</p>
+                      </div>
+                      <button onClick={() => { setWorkspaceView("drawings"); void openDrawing(drawingId); }}>
+                        Open drawing <ArrowRight size={14}/>
+                      </button>
+                    </header>
+                    <div>
+                      {rows.map(({ event, item }) => (
+                        <button
+                          key={event.id}
+                          className="drawing-today-row"
+                          onClick={() => {
+                            setWorkspaceView("drawings");
+                            if (event.drawingId === currentDrawingId) setPendingFocusWorkItem(event.workItemId);
+                            else void openDrawing(event.drawingId).then(() => setPendingFocusWorkItem(event.workItemId));
+                          }}
+                        >
+                          <span className={`drawing-today-status ${event.status === "Complete" ? "complete" : "progress"}`}>
+                            {event.status === "Complete" ? <Check size={12}/> : "•"}
+                          </span>
+                          <span>
+                            <b>{item?.label?.trim() || "Unnamed"}</b>
+                            <small>{item?.itemType ?? "Other"}{item?.line ? ` · ${item.line}` : ""}</small>
+                          </span>
+                          <em>{event.status ?? "In Progress"}</em>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <div className="drawing-today-empty">
+                <p>No drawing markups recorded today yet.</p>
+                <button onClick={() => setDrawingTab("history")}>Browse previous drawings</button>
+              </div>
+            )}
+          </>
+        ) : (
+          /* Historical Drawings Grid with rich thumbnails and metadata */
+          <div className="drawing-history-grid">
+            {drawingRows.map((snapshot) => {
+              const id = String(snapshot.id ?? "");
+              if (!id) return null;
+              const thumb = resolveDrawingThumbnail(snapshot, drawingThumbnails, user?.uid, currentDrawingId, url, failedThumbs);
+              const marksList = Array.isArray(snapshot.marks) ? snapshot.marks as Mark[] : [];
+              const workMarks = marksList.filter((m) => m.kind === "mark");
+              const compCount = workMarks.filter((m) => m.status === "Complete").length;
+              const isToday = String(snapshot.updatedAt ?? "").slice(0, 10) === localDateKey();
+
+              return (
+                <article key={id} className="drawing-history-card" onClick={() => { setWorkspaceView("drawings"); void openDrawing(id); }}>
+                  <div className="drawing-history-thumb">
+                    {thumb ? (
+                      <img src={thumb} alt={String(snapshot.name ?? snapshot.fileName ?? "Drawing")} onError={() => handleThumbnailError(id, thumb)} />
+                    ) : (
+                      <div className="drawing-history-blueprint-card">
+                        <div className="drawing-blueprint-grid" />
+                        <div className="drawing-blueprint-inner">
+                          <div className="drawing-blueprint-badge">
+                            <FileText size={11} />
+                            <span>{String(snapshot.mimeType ?? snapshot.contentType ?? "").includes("pdf") ? "PDF SHEET" : "ENGINEERING DWG"}</span>
+                          </div>
+                          <div className="drawing-blueprint-title">
+                            {String(snapshot.name ?? snapshot.fileName ?? "Drawing").replace(/\.[^.]+$/, "")}
+                          </div>
+                          {Boolean(snapshot.revision) && (
+                            <span className="drawing-blueprint-rev">REV {String(snapshot.revision)}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {isToday && <span className="drawing-history-badge-today">Active Today</span>}
+                  </div>
+                  <div className="drawing-history-meta">
+                    <b>{String(snapshot.name ?? snapshot.fileName ?? "Drawing").replace(/\.[^.]+$/, "")}</b>
+                    <p className="drawing-history-sub">
+                      {snapshot.revision ? `Rev ${String(snapshot.revision)} · ` : ""}
+                      {snapshot.updatedAt ? new Date(String(snapshot.updatedAt)).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "Historical"}
+                    </p>
+                    <div className="drawing-history-counts">
+                      <span><b>{workMarks.length}</b> work items</span>
+                      <span><b>{compCount}</b> complete</span>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+            {drawingRows.length === 0 && (
+              <div className="drawing-today-empty">
+                <p>No historical drawings uploaded yet.</p>
+                <button onClick={() => inputRef.current?.click()}>Upload first drawing</button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+    ) : !file ? <div className="drawing-start-screen">
       <header className="drawing-start-header"><Link href="/" className="drawing-logo">EPCX<span>.cloud</span></Link><span>FIELD WORKBENCH</span></header>
       <section className={`drawing-dropzone ${dragging ? "is-dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={(event) => { event.preventDefault(); setDragging(false); void openFile(event.dataTransfer.files[0]); }}>
         <div className="drawing-upload-icon">{user && !user.isAnonymous ? <Upload size={21}/> : <Lock size={21}/>}</div><p className="drawing-eyebrow">FIELD WORKBENCH / {user && !user.isAnonymous ? "NEW SESSION" : "ACCOUNT REQUIRED"}</p><h1>{user && !user.isAnonymous ? "Start with your drawing" : "Sign in to start your drawing"}</h1><p>{user && !user.isAnonymous ? "Upload the PDF or image you are working on. Then mark today's progress directly on it." : "Create an account or sign in first. Your drawing and field notes will then be saved under your account."}</p>
@@ -960,10 +1551,107 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
       </section>
       <footer className="drawing-start-footer"><span>{user && !user.isAnonymous ? "Your drawing and today’s work save to your account." : "Your account keeps drawings and field notes associated with you."}</span>{user && !user.isAnonymous && <Link href="/login?redirect=%2Fstart">Switch account</Link>}</footer>
     </div> : <>
-      <header className="drawing-work-header"><Link href="/" className="drawing-logo">EPCX<span>.cloud</span></Link><div className="drawing-file-heading"><b title={`${drawingName}${revision ? ` · Rev ${revision}` : ""}`}>{drawingName || file.name.replace(/\.[^.]+$/, "")}{revision ? ` · Rev ${revision}` : ""}</b><span>{isPdf(file) ? `Page ${page} / ${pages} · PDF` : "Image drawing"}{area ? ` · ${area}` : ""}</span></div>{syncState === "failed" ? <button className="drawing-sync is-failed" onClick={() => setMarks([...marksRef.current])}>Upload failed · Retry</button> : <span className={`drawing-sync is-${syncState}`} aria-live="polite">{syncState === "saving" || syncState === "uploading" ? "Uploading…" : syncState === "offline" ? "Offline · Saved locally" : syncState === "pending" ? "Syncing…" : "✓ Synced"}</span>}<span className="drawing-guest" title="Signed-in EPCX account"><span className="drawing-avatar">{user?.displayName?.slice(0,1) ?? "E"}</span>{user?.displayName || user?.email || "Account"}</span><button onClick={saveCurrent} disabled={saving} className="drawing-save"><Save size={15}/>{saving ? "Uploading…" : saved ? "Synced" : "Save Today’s Work"}</button></header>
+      <header className="drawing-work-header">
+        <Link href="/" className="drawing-logo">EPCX<span>.cloud</span></Link>
+        <div className="drawing-file-heading">
+          <div className="flex items-center gap-2">
+            <b title={`${drawingName}${revision ? ` · Rev ${revision}` : ""}`}>
+              {drawingName || file.name.replace(/\.[^.]+$/, "")}{revision ? ` · Rev ${revision}` : ""}
+            </b>
+            {!isCurrentDrawingToday && (
+              <span className="historical-drawing-pill" title="This is a historical record. Today's live sheet may differ.">
+                Historical field record · {revision ? `Rev ${revision}` : "Previous"}
+              </span>
+            )}
+          </div>
+          <span>{isPdf(file) ? `Page ${page} / ${pages} · PDF` : "Image drawing"}{area ? ` · ${area}` : ""}</span>
+        </div>
+
+        {/* Contextual Chrome: + Add Record Dropdown */}
+        <div className="drawing-chrome-add-wrap">
+          <button
+            className="drawing-chrome-add-btn"
+            onClick={() => setAddMenuOpen((open) => !open)}
+            aria-expanded={addMenuOpen}
+          >
+            <Plus size={14} />
+            <span>+ Add record</span>
+            <ChevronDown size={12} />
+          </button>
+          {addMenuOpen && (
+            <div className="field-submenu-popover drawing-chrome-add-menu" onClick={(e) => e.stopPropagation()}>
+              <span className="field-submenu-eyebrow">FIELD CAPTURE &amp; ATTACH</span>
+              <div className="field-submenu-list">
+                <button
+                  className="field-submenu-item"
+                  onClick={() => { setAddMenuOpen(false); photoCaptureRef.current?.click(); }}
+                >
+                  <span className="field-submenu-icon">
+                    <Camera size={15} />
+                  </span>
+                  <span className="field-submenu-text">
+                    <span className="field-submenu-title">Site Inspection Photo</span>
+                    <span className="field-submenu-desc">Attach photo directly to active sheet</span>
+                  </span>
+                  <ChevronRight size={13} className="field-submenu-arrow" />
+                </button>
+                <button
+                  className="field-submenu-item"
+                  onClick={() => { setAddMenuOpen(false); docCaptureRef.current?.click(); }}
+                >
+                  <span className="field-submenu-icon">
+                    <FileText size={15} />
+                  </span>
+                  <span className="field-submenu-text">
+                    <span className="field-submenu-title">Field Document / Report</span>
+                    <span className="field-submenu-desc">Attach test certificate, report or spec</span>
+                  </span>
+                  <ChevronRight size={13} className="field-submenu-arrow" />
+                </button>
+                <button
+                  className="field-submenu-item"
+                  onClick={() => { setAddMenuOpen(false); inputRef.current?.click(); }}
+                >
+                  <span className="field-submenu-icon">
+                    <Upload size={15} />
+                  </span>
+                  <span className="field-submenu-text">
+                    <span className="field-submenu-title">New Drawing / Revision</span>
+                    <span className="field-submenu-desc">Upload next sheet revision or markups</span>
+                  </span>
+                  <ChevronRight size={13} className="field-submenu-arrow" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {syncState === "failed" ? (
+          <button className="drawing-sync is-failed" onClick={() => setMarks([...marksRef.current])}>
+            Upload failed · Retry
+          </button>
+        ) : (
+          <span className={`drawing-sync is-${syncState}`} aria-live="polite">
+            {syncState === "saving" || syncState === "uploading"
+              ? "Uploading…"
+              : syncState === "offline"
+              ? "Offline · Saved locally"
+              : syncState === "pending"
+              ? "Syncing…"
+              : "✓ Synced"}
+          </span>
+        )}
+        <span className="drawing-guest" title="Signed-in EPCX account">
+          <span className="drawing-avatar">{user?.displayName?.slice(0, 1) ?? "E"}</span>
+          {user?.displayName || user?.email || "Account"}
+        </span>
+        <button onClick={saveCurrent} disabled={saving} className="drawing-save">
+          <Save size={15}/>{saving ? "Uploading…" : saved ? "Synced" : "Save Today’s Work"}
+        </button>
+      </header>
       <section ref={stageRef} className="drawing-stage" style={{ touchAction: "none" }}>
         <div ref={sheetRef} className={`drawing-sheet ${tool === "crop" ? "is-cropping" : ""} ${tool === "mark" ? "is-marking" : ""} ${tool === "select" ? "is-panning" : ""} ${panState ? "is-grabbing" : ""}`} onPointerDown={stagePointerDown} onPointerMove={stagePointerMove} onPointerUp={endPointer} onPointerCancel={() => { touchPoints.current.clear(); pinchStart.current = null; setPanState(null); setCropStart(null); setCropRegion(null); setDrawStart(null); setDrawingPoints([]); setMarkupPreview(null); }} style={{ transform: `translate(${panOffset.x}px, ${panOffset.y}px) rotate(${rotation}deg) scale(${zoom})`, transformOrigin: "center", width: isPdf(file) ? pdfPage?.width : undefined, height: isPdf(file) ? pdfPage?.height : undefined, touchAction: "none" }}>
-        {isPdf(file) ? <>{pdfPage ? <canvas className="drawing-pdf-canvas" width={pdfPage.data?.width} height={pdfPage.data?.height} ref={(node) => { if (node && pdfPage.data) node.getContext("2d")?.putImageData(pdfPage.data, 0, 0); }} style={{ width: pdfPage.width, height: pdfPage.height }} /> : <div className="drawing-loading"><LoaderCircle className="animate-spin"/>Opening drawing…</div>}</> : <img className={`drawing-image ${rotation % 180 ? "is-rotated" : ""}`} src={url} alt={file.name}/>}
+        {isPdf(file) ? <>{pdfPage ? <canvas className="drawing-pdf-canvas" width={pdfPage.data?.width} height={pdfPage.data?.height} ref={(node) => { if (node && pdfPage.data) node.getContext("2d")?.putImageData(pdfPage.data, 0, 0); }} style={{ width: pdfPage.width, height: pdfPage.height, filter: enhancedView ? "contrast(140%) brightness(105%) grayscale(15%)" : undefined }} /> : <div className="drawing-loading"><EpcxSpinner size="sm" inline />Opening drawing…</div>}</> : <img className={`drawing-image ${rotation % 180 ? "is-rotated" : ""}`} src={url} alt={file.name} style={{ filter: enhancedView ? "contrast(140%) brightness(105%) grayscale(15%)" : undefined }}/>}
         <div className="drawing-overlay">
           <svg className="drawing-vector-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Drawing annotations">
             {marks.filter((mark) => mark.page === page && (mark.kind === "highlight" || mark.kind === "arrow" || mark.kind === "draw")).map((mark) => <g key={mark.id} onClick={() => setSelectedId(mark.id)}>{mark.kind === "highlight" ? <rect x={Math.min(mark.x, mark.x+(mark.width??0))*1000} y={Math.min(mark.y, mark.y+(mark.height??0))*1000} width={Math.abs(mark.width??0)*1000} height={Math.abs(mark.height??0)*1000} fill="rgba(243,197,48,.25)" stroke="#d5a900" strokeWidth="3"/> : mark.kind === "draw" ? <polyline points={(mark.points??[]).map((p)=>`${p.x*1000},${p.y*1000}`).join(" ")} fill="none" stroke="#c0392b" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/> : <line x1={mark.x*1000} y1={mark.y*1000} x2={(mark.x+(mark.width??0))*1000} y2={(mark.y+(mark.height??0))*1000} stroke="#177947" strokeWidth="4" markerEnd="url(#arrowhead)"/>}</g>)}
@@ -971,18 +1659,28 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
             {markupPreview && markupPreview.page === page && (markupPreview.kind === "highlight" ? <rect x={Math.min(markupPreview.x,markupPreview.x+(markupPreview.width??0))*1000} y={Math.min(markupPreview.y,markupPreview.y+(markupPreview.height??0))*1000} width={Math.abs(markupPreview.width??0)*1000} height={Math.abs(markupPreview.height??0)*1000} fill="rgba(243,197,48,.25)" stroke="#d5a900" strokeWidth="3" strokeDasharray="10 7"/> : markupPreview.kind === "draw" ? <polyline points={(markupPreview.points??[]).map((p)=>`${p.x*1000},${p.y*1000}`).join(" ")} fill="none" stroke="#c0392b" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/> : <line x1={markupPreview.x*1000} y1={markupPreview.y*1000} x2={(markupPreview.x+(markupPreview.width??0))*1000} y2={(markupPreview.y+(markupPreview.height??0))*1000} stroke="#177947" strokeWidth="4" strokeDasharray="10 7" markerEnd="url(#arrowhead)"/>)}
             {tool === "crop" && cropRegion && <rect className="drawing-crop-selection" x={cropRegion.x*1000} y={cropRegion.y*1000} width={cropRegion.width*1000} height={cropRegion.height*1000} fill="rgba(39,130,82,.14)" stroke="#24764a" strokeWidth="3" strokeDasharray="12 8"/>}
           </svg>
-          {marks.filter((mark) => mark.page === page && ((mark.kind === "mark" && showWorkItems) || mark.kind === "text")).map((mark) => <button key={mark.id} className={`drawing-pin ${mark.kind === "text" ? "drawing-note" : ""} ${mark.status === "Complete" ? "is-complete" : "is-progress"} ${selectedId === mark.id ? "is-selected" : ""}`} style={{ left: `${mark.x*100}%`, top: `${mark.y*100}%`, transform: `translate(-50%,-50%) rotate(${-rotation}deg)` }} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setSelectedId(mark.id); setEditing(mark); }} aria-label={mark.kind === "mark" ? `${mark.label?.trim() || "Unnamed Work Item"}, ${mark.status}` : mark.label}>{mark.kind === "text" ? mark.label || "Note" : <><span>{mark.status === "Complete" ? <Check size={12}/> : "•"}</span><b>{mark.label?.trim() || "Unnamed"}</b></>}</button>)}
+          {marks.filter((mark) => mark.page === page && ((mark.kind === "mark" && showWorkItems) || mark.kind === "text")).map((mark) => {
+            const isComplete = mark.status === "Complete";
+            const label = mark.label?.trim() || "Item";
+            const central = fieldContext?.workItems?.find((w) => w.id === mark.id || (w.drawingId === currentDrawingId && w.jointId === mark.label));
+            const isDprReported = central?.dprReported;
+            const isNdtPending = central?.ndtStatus === "pending";
+
+            return <button key={mark.id} className={`drawing-pin ${mark.kind === "text" ? "drawing-note" : ""} ${isComplete ? "is-complete" : "is-progress"} ${selectedId === mark.id ? "is-selected" : ""}`} style={{ left: `${mark.x*100}%`, top: `${mark.y*100}%`, transform: `translate(-50%,-50%) rotate(${-rotation}deg)` }} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setSelectedId(mark.id); setEditing(mark); }} aria-label={mark.kind === "mark" ? `${label}, ${mark.status}` : mark.label}>
+              {mark.kind === "text" ? mark.label || "Note" : <span className="drawing-pin-badge"><span className="pin-head">{isComplete ? <Check size={11}/> : "•"}<b>{label}</b></span><span className="pin-badges"><small className="pin-status">{isComplete ? "Complete" : "In Progress"}</small>{isComplete && <small className={`pin-dpr-tag ${isDprReported ? "dpr-ok" : "dpr-miss"}`}>{isDprReported ? "DPR ✓" : "DPR missing"}</small>}{isNdtPending && <small className="pin-ndt-tag">NDT pend</small>}</span></span>}
+            </button>;
+          })}
         </div>
         </div>
         {error && <div className="drawing-inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss"><X size={14}/></button></div>}
         {editing && <aside className="drawing-context-card" style={contextualStyle(editing)} onPointerDown={(event) => event.stopPropagation()}><div className="drawing-card-head"><span>{editing.kind === "mark" ? "MARK WORK ITEM" : editing.kind === "text" ? "DRAWING NOTE" : "MARKUP"}</span><button onClick={() => setEditing(null)} aria-label="Close"><X size={16}/></button></div>
-          {editing.kind === "mark" ? <><p className="drawing-work-item-name">{editing.label?.trim() || "Unnamed Work Item"}</p><div className="drawing-status-label">Status</div><div className="drawing-status-options"><button className={editing.status === "In Progress" ? "active" : ""} onClick={() => patchEditing({ status: "In Progress" })}>In Progress</button><button className={editing.status === "Complete" ? "active" : ""} onClick={() => patchEditing({ status: "Complete" })}><Check size={14}/>Complete</button></div><details className="drawing-work-item-details"><summary>Details (optional)</summary><label>Label / ID<input placeholder="Possible joint: J-017" value={editing.label ?? ""} onChange={(event) => patchEditing({ label: event.target.value })}/></label><label>Work type<select value={editing.itemType ?? "Other"} onChange={(event) => patchEditing({ itemType: event.target.value })}><option>Joint</option><option>Equipment</option><option>Structure</option><option>Area</option><option>Other</option></select></label><label>Line / area<input placeholder="Optional" value={editing.line ?? ""} onChange={(event) => patchEditing({ line: event.target.value })}/></label><label>Crew / welder<input placeholder="Optional" value={editing.crew ?? editing.welder ?? ""} onChange={(event) => patchEditing({ crew: event.target.value })}/></label></details></> : editing.kind === "text" ? <label>Note<textarea autoFocus rows={2} value={localText || editing.label || ""} onChange={(event) => setLocalText(event.target.value)} placeholder="Add a short note"/></label> : <p className="drawing-field-hint">Markup is attached to this drawing page.</p>}
+          {editing.kind === "mark" ? <><div className="drawing-card-status-bar"><p className="drawing-work-item-name">{editing.label?.trim() || "Unnamed Work Item"}</p>{editing.status === "Complete" && <span className="drawing-dpr-tag-view">{fieldContext?.workItems?.find((w) => w.id === editing.id)?.dprReported ? "DPR ✓ Reported" : "DPR missing"}</span>}</div><div className="drawing-status-label">Status (1-tap update)</div><div className="drawing-status-options"><button className={editing.status === "In Progress" ? "active" : ""} onClick={() => patchEditing({ status: "In Progress" })}>In Progress</button><button className={editing.status === "Complete" ? "active" : ""} onClick={() => patchEditing({ status: "Complete" })}><Check size={14}/>Complete</button></div><details className="drawing-work-item-details"><summary>Details &amp; NDT (optional)</summary><label>Label / Joint ID<input placeholder="Possible joint: J-017" value={editing.label ?? ""} onChange={(event) => patchEditing({ label: event.target.value })}/></label><label>Work type<select value={editing.itemType ?? "Joint"} onChange={(event) => patchEditing({ itemType: event.target.value })}><option value="Joint">Joint (Welding)</option><option value="Piping">Piping</option><option value="Structure">Structure</option><option value="Equipment">Equipment</option><option value="Tank">Tank</option><option value="Civil">Civil</option><option value="Other">Other</option></select></label><label>Line / area<input placeholder="e.g. 24-P-102" value={editing.line ?? ""} onChange={(event) => patchEditing({ line: event.target.value })}/></label><label>Crew / welder<input placeholder="e.g. Crew A, Welder 04" value={editing.crew ?? editing.welder ?? ""} onChange={(event) => patchEditing({ crew: event.target.value })}/></label></details></> : editing.kind === "text" ? <label>Note<textarea autoFocus rows={2} value={localText || editing.label || ""} onChange={(event) => setLocalText(event.target.value)} placeholder="Add a short note"/></label> : <p className="drawing-field-hint">Markup is attached to this drawing page.</p>}
           {editing.kind === "mark" && editing.history?.length ? <div className="drawing-item-history">{editing.history.slice(-4).map((entry, index) => <span key={`${entry.at}-${index}`}>{new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {entry.action}</span>)}</div> : null}
-          <div className="drawing-card-actions">{editing.kind === "mark" && <><button className="drawing-delete" onClick={() => { commitMarks((old) => old.filter((item) => item.id !== editing.id), "Work item deleted"); setEditing(null); }}>Delete</button><button onClick={() => { setSelectedId(editing.id); setEditing(null); setTool("move"); setToast("Tap the new location to move this item"); }}>Move</button></>}{editing.kind !== "mark" && <button className="drawing-delete" onClick={() => { commitMarks((old) => old.filter((item) => item.id !== editing.id), "Markup deleted"); setEditing(null); }}>Delete</button>}<button className="drawing-save-mark" onClick={saveMark}>{editing.kind === "mark" ? "Done" : "Save"}</button></div>
+          <div className="drawing-card-actions">{editing.kind === "mark" && <><button className="drawing-delete" onClick={() => { const deletedId = editing.id; commitMarks((old) => old.filter((item) => item.id !== deletedId), "Work item deleted"); void fieldContext?.deleteWorkItem(deletedId); setEditing(null); }}>Delete</button><button onClick={() => { setSelectedId(editing.id); setEditing(null); setTool("move"); setToast("Tap the new location to move this item"); }}>Move</button></>}{editing.kind !== "mark" && <button className="drawing-delete" onClick={() => { commitMarks((old) => old.filter((item) => item.id !== editing.id), "Markup deleted"); setEditing(null); }}>Delete</button>}<button className="drawing-save-mark" onClick={saveMark}>{editing.kind === "mark" ? "Done" : "Save"}</button></div>
         </aside>}
         {localText && !editing && <div className="drawing-extract-card"><button onClick={() => { setLocalText(""); setDetectedText(""); setExtraction(null); }} aria-label="Close"><X size={14}/></button><b>{localText === "text-detected" ? "TEXT FOUND" : localText.startsWith("Checking") ? "CHECKING PDF TEXT" : "HIGHLIGHT SAVED"}</b>{localText === "text-detected" ? <><input aria-label="Detected drawing text" value={detectedText} onChange={(event) => setDetectedText(event.target.value)}/><select aria-label="Use detected text as" value={fieldTarget} onChange={(event) => setFieldTarget(event.target.value)}><option value="line">Line / Area</option><option value="label">Joint / Work Item</option><option value="equipment">Equipment Tag</option><option value="area">Area</option><option value="drawing">Drawing Reference</option></select><div className="drawing-extract-actions"><button onClick={() => { if (fieldTarget === "line" || fieldTarget === "area") setPendingLine(detectedText); else setPendingItemLabel(detectedText); setLocalText(""); setTool("mark"); }}>Use</button><button onClick={() => void navigator.clipboard?.writeText(detectedText)}><Copy size={13}/>Copy</button><button onClick={() => setLocalText("text-detected")}>Edit</button></div><small>{extraction?.source === "selectable-pdf-text" ? "Read from selectable PDF text. Verify before using." : "Check this suggested value."}</small></> : <p>{localText}</p>}</div>}
         {tool === "crop" && <div className="drawing-crop-actions" onPointerDown={(event) => event.stopPropagation()}><b>{cropRegion ? "Crop selected area" : "Select area to keep"}</b><span>{cropRegion ? "Everything outside will be removed." : "Drag a rectangle over the drawing."}</span><div><button onClick={() => { setCropRegion(null); setTool("mark"); }}>Cancel</button><button disabled={!cropRegion || cropRegion.width < .02 || cropRegion.height < .02} onClick={() => void applyImageCrop()}>Apply Crop</button></div></div>}
-        <div className={`drawing-view-controls ${tool === "crop" ? "is-hidden" : ""}`}>{isPdf(file) && <><button aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronLeft size={16}/></button><span>Page {page} / {pages}</span><button aria-label="Next page" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}><ChevronRight size={16}/></button><i/></>}<button onClick={() => setZoom((value) => Math.max(.5, Number((value-.2).toFixed(1))))} aria-label="Zoom out">−</button><button title="Set zoom to 100 percent" onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }}>{Math.round(zoom*100)}%</button><button onClick={() => setZoom((value) => Math.min(2.5, Number((value+.2).toFixed(1))))} aria-label="Zoom in"><Plus size={15}/></button><button onClick={fitDrawing}>Fit</button></div>
+        <div className={`drawing-view-controls ${tool === "crop" ? "is-hidden" : ""}`}>{isPdf(file) && <><button aria-label="Previous page" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}><ChevronLeft size={16}/></button><span>Page {page} / {pages}</span><button aria-label="Next page" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}><ChevronRight size={16}/></button><i/></>}<button onClick={() => setZoom((value) => Math.max(.5, Number((value-.2).toFixed(1))))} aria-label="Zoom out">−</button><button title="Set zoom to 100 percent" onClick={() => { setZoom(1); setPanOffset({ x: 0, y: 0 }); }}>{Math.round(zoom*100)}%</button><button onClick={() => setZoom((value) => Math.min(2.5, Number((value+.2).toFixed(1))))} aria-label="Zoom in"><Plus size={15}/></button><button onClick={fitDrawing}>Fit</button><button className={enhancedView ? "active" : ""} title="Enhance contrast for paper drawing photos" onClick={() => setEnhancedView(!enhancedView)}>Enhance</button></div>
       </section>
       {hintVisible && <div className="drawing-hint">Tip: <b>Mark Work</b> → tap a location on the drawing <button onClick={() => setHintVisible(false)} aria-label="Dismiss hint"><X size={13}/></button></div>}
       {toast && <div className="drawing-toast" role="status">{toast}{["Work item marked", "Highlight added", "Arrow added", "Drawing added", "Work item moved", "Work item deleted", "Markup deleted", "Work item saved", "Note added", "Crop applied", "Marked Complete", "Marked In Progress", "Work item updated"].includes(toast) && <button onClick={undo}>Undo</button>}</div>}
@@ -991,6 +1689,6 @@ export function DrawingFirstWorkbench({ initialView = "drawings", initialAction 
     </>}
     </div>
     <nav className="drawing-mobile-nav" aria-label="Field workspace navigation"><button className={workspaceView === "drawings" ? "active" : ""} onClick={() => setWorkspaceView("drawings")}><span className="drawing-nav-dot"/>Drawings</button><button className={workspaceView === "today" ? "active" : ""} onClick={() => setWorkspaceView("today")}><span className="drawing-nav-dot"/>Today{todayItems.length > 0 && <small>{todayItems.length}</small>}</button></nav>
-    {showDrawingDetails && pendingFile && <div className="drawing-modal-backdrop"><form className="drawing-details-modal" onSubmit={confirmDrawingDetails}><p className="drawing-eyebrow">NEW DRAWING</p><h2>Drawing details</h2><p className="drawing-details-file">{pendingFile.name}</p><label>Drawing name<input autoFocus required value={drawingName} onChange={(event) => setDrawingName(event.target.value)} placeholder="e.g. ISO-24-P-102"/></label><label>Revision <span>Optional</span><input value={revision} onChange={(event) => setRevision(event.target.value)} placeholder="e.g. Rev 03"/></label><label>Line / Area <span>Optional</span><input value={area} onChange={(event) => setArea(event.target.value)} placeholder="e.g. 24-P-102 · North rack"/></label>{detailsError && <p className="drawing-error">{detailsError}</p>}<div className="drawing-card-actions"><button type="button" onClick={() => { setShowDrawingDetails(false); setPendingFile(null); }}>Cancel</button><button type="submit" className="drawing-save-mark">Open drawing</button></div></form></div>}
+    {showDrawingDetails && pendingFile && <div className="drawing-modal-backdrop"><form className="drawing-details-modal" onSubmit={confirmDrawingDetails}><p className="drawing-eyebrow">NEW DRAWING</p><h2>Drawing details</h2><p className="drawing-details-file">{pendingFile.name}</p>{revisionWarning && <p className="drawing-rev-warning" role="alert"><AlertTriangle size={14}/> {revisionWarning}</p>}<label>Drawing name<input autoFocus required value={drawingName} onChange={(event) => setDrawingName(event.target.value)} placeholder="e.g. ISO-24-P-102"/></label><label>Revision <span>Optional</span><input value={revision} onChange={(event) => setRevision(event.target.value)} placeholder="e.g. Rev 03"/></label><label>Line / Area <span>Optional</span><input value={area} onChange={(event) => setArea(event.target.value)} placeholder="e.g. 24-P-102 · North rack"/></label>{detailsError && <p className="drawing-error">{detailsError}</p>}<div className="drawing-card-actions"><button type="button" onClick={() => { setShowDrawingDetails(false); setPendingFile(null); }}>Cancel</button><button type="submit" className="drawing-save-mark">Open drawing</button></div></form></div>}
   </main>;
 }

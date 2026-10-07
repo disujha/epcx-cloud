@@ -12,7 +12,7 @@ const faqs = [
   },
   {
     q: "Can I use OpenAI or my own model?",
-    a: "Yes. EPCX is provider-agnostic. You can connect public APIs like OpenAI, Claude, or Google Gemini, utilize private instances, or configure a local model (such as Llama-3 or Mistral) to run completely offline.",
+    a: "Yes. EPCX AI can work with supported hosted providers, private instances, or local models, depending on your deployment configuration.",
   },
   {
     q: "Can EPCX run on-premise?",
