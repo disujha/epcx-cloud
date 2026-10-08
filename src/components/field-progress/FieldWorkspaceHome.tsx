@@ -618,7 +618,7 @@ export function FieldWorkspaceHome({
   return (
     <main className={`field-dashboard field-workspace-home${reports ? " is-reports" : ""}`}>
       <input ref={tbtInputRef} hidden type="file" accept={accepted} onChange={(event) => void uploadFiles("TBT", event.target.files)} />
-      <input ref={photoInputRef} hidden type="file" accept=".jpg,.jpeg,.png,.webp" multiple onChange={(event) => void uploadFiles("PHOTO", event.target.files)} />
+      <input ref={photoInputRef} hidden type="file" accept="image/*,.jpg,.jpeg,.png,.webp" multiple onChange={(event) => void uploadFiles("PHOTO", event.target.files)} />
       <input ref={documentInputRef} hidden type="file" accept={accepted} onChange={(event) => void uploadFiles("DOCUMENT", event.target.files)} />
 
       {tbtDialogOpen && (

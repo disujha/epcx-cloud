@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProjectWorkspaceProvider } from "@/contexts/ProjectWorkspaceContext";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { ServiceNoticeBanner } from "@/components/marketing/ServiceNoticeBanner";
+import { PwaProvider } from "@/components/pwa/PwaProvider";
 import "./globals.css";
 import "./field-records.css";
 import "./field-records-nav.css";
@@ -13,6 +14,17 @@ import "./field-app-shell.css";
 import "./public-home.css";
 import "./field-workspace-home.css";
 import "./field-work-register.css";
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#0e5549" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f1f1a" },
+  ],
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://epcx.cloud"),
@@ -30,6 +42,25 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "EPCX.cloud" }],
   creator: "EPCX.cloud",
+  applicationName: "EPCX Cloud",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "EPCX Cloud",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512x512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
   openGraph: {
     type: "website",
     locale: "en_US",
@@ -77,7 +108,7 @@ export default function RootLayout({
     >
       <head>
         <link rel="icon" href="/favicon.png" />
-        <link rel="apple-touch-icon" href="/favicon.png" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
       </head>
       <body className="font-sans antialiased">
         <ThemeProvider
@@ -86,7 +117,14 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange={false}
         >
-          <AuthProvider><ProjectWorkspaceProvider><ServiceNoticeBanner />{children}</ProjectWorkspaceProvider></AuthProvider>
+          <AuthProvider>
+            <ProjectWorkspaceProvider>
+              <PwaProvider>
+                <ServiceNoticeBanner />
+                {children}
+              </PwaProvider>
+            </ProjectWorkspaceProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
