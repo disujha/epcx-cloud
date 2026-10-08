@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getSafePostAuthPath } from "@/lib/auth-redirect";
+import { getFriendlyAuthErrorMessage } from "@/lib/firebase/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { signIn, signInGoogle } = useAuth();
+  const { user, loading: authLoading, redirectError, signIn, signInGoogle } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,6 +19,20 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Automatically navigate if user completes redirect flow or is already authenticated
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+    }
+  }, [user, authLoading, router]);
+
+  // Display errors that occurred during redirect OAuth callback
+  useEffect(() => {
+    if (redirectError) {
+      setError(redirectError);
+    }
+  }, [redirectError]);
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -27,14 +42,7 @@ export default function LoginPage() {
       await signIn(email, password);
       router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Invalid credentials";
-      setError(
-        msg.includes("invalid-credential") || msg.includes("wrong-password")
-          ? "Invalid email or password."
-          : msg.includes("too-many-requests")
-          ? "Too many attempts. Try again later."
-          : "Sign in failed. Please try again."
-      );
+      setError(getFriendlyAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -44,11 +52,15 @@ export default function LoginPage() {
     setError("");
     setGoogleLoading(true);
     try {
-      await signInGoogle();
-      router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
-    } catch {
-      setError("Google sign-in failed. Please try again.");
-    } finally {
+      const result = await signInGoogle();
+      if (result) {
+        // Desktop popup completed
+        router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+      }
+      // If result is undefined/void, the browser is redirecting to Google
+    } catch (err: unknown) {
+      console.error("Google sign-in error:", err);
+      setError(getFriendlyAuthErrorMessage(err));
       setGoogleLoading(false);
     }
   }

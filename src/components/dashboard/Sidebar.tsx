@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, FileText, FolderOpen, ReceiptText, ClipboardCheck, MapPinned,
-  Settings, User, LogOut, Zap, ChevronRight, Building2, Users
+  Settings, User, LogOut, ChevronRight, Building2, Users
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 
@@ -32,14 +33,20 @@ export function Sidebar() {
   return (
     <aside className="flex flex-col w-64 h-full bg-white dark:bg-brand-900 border-r border-slate-200 dark:border-slate-800">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-200 dark:border-slate-800">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-500 to-brand-700 flex items-center justify-center flex-shrink-0">
-          <Zap className="w-4 h-4 text-white" strokeWidth={2.5} />
+      <Link href="/" className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-200 dark:border-slate-800 group">
+        <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg flex-shrink-0">
+          <Image
+            src="/images/icon.png"
+            alt="EPCX Logo"
+            width={32}
+            height={32}
+            className="h-full w-full object-contain"
+          />
         </div>
         <span className="font-display font-bold text-base text-slate-900 dark:text-white">
           EPCX<span className="text-accent-500">.cloud</span>
         </span>
-      </div>
+      </Link>
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">

@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Mail, Lock, User } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getSafePostAuthPath } from "@/lib/auth-redirect";
+import { getFriendlyAuthErrorMessage } from "@/lib/firebase/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register, signInGoogle } = useAuth();
+  const { user, loading: authLoading, redirectError, register, signInGoogle } = useAuth();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -19,6 +20,20 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Automatically navigate if user completes redirect flow or is already authenticated
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+    }
+  }, [user, authLoading, router]);
+
+  // Display errors that occurred during redirect OAuth callback
+  useEffect(() => {
+    if (redirectError) {
+      setError(redirectError);
+    }
+  }, [redirectError]);
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -32,12 +47,7 @@ export default function RegisterPage() {
       await register(email, password, name);
       router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "";
-      setError(
-        msg.includes("email-already-in-use")
-          ? "An account with this email already exists."
-          : "Registration failed. Please try again."
-      );
+      setError(getFriendlyAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -47,11 +57,14 @@ export default function RegisterPage() {
     setError("");
     setGoogleLoading(true);
     try {
-      await signInGoogle();
-      router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
-    } catch {
-      setError("Google sign-in failed. Please try again.");
-    } finally {
+      const result = await signInGoogle();
+      if (result) {
+        router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+      }
+      // If result is undefined/void, the browser is redirecting to Google
+    } catch (err: unknown) {
+      console.error("Google sign-in error:", err);
+      setError(getFriendlyAuthErrorMessage(err));
       setGoogleLoading(false);
     }
   }

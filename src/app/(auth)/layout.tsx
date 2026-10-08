@@ -1,16 +1,23 @@
 import Link from "next/link";
-import { Zap } from "lucide-react";
+import Image from "next/image";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-brand-950 flex flex-col">
       {/* Top bar */}
       <div className="flex items-center justify-between px-6 py-4">
-        <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-500 to-brand-700 flex items-center justify-center">
-            <Zap className="w-4 h-4 text-white" strokeWidth={2.5} />
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
+            <Image
+              src="/images/icon.png"
+              alt="EPCX Logo"
+              width={32}
+              height={32}
+              className="h-full w-full object-contain"
+              priority
+            />
           </div>
-          <span className="font-display font-bold text-lg text-slate-900 dark:text-white">
+          <span className="font-display font-bold text-lg tracking-tight text-slate-900 dark:text-white">
             EPCX<span className="text-accent-500">.cloud</span>
           </span>
         </Link>
