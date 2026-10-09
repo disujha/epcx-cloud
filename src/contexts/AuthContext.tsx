@@ -59,10 +59,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then(async (result) => {
         if (!isMounted) return;
         if (result) {
+          syncSessionCookie(true);
           const profileName = getAdditionalUserInfo(result)?.profile?.name;
           if (!result.user.displayName && typeof profileName === "string" && profileName.trim()) {
             await updateProfile(result.user, { displayName: profileName.trim() });
           }
+          setUser(result.user);
+          setLoading(false);
         }
       })
       .catch((err: unknown) => {

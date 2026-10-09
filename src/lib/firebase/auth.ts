@@ -80,12 +80,9 @@ export async function registerWithEmail(
 }
 
 export async function signInWithGoogle(): Promise<UserCredential | void> {
-  // On mobile browsers (like Chrome on Android or Safari on iOS), signInWithPopup is
-  // frequently blocked or breaks tab communication. Use signInWithRedirect for reliability.
-  if (isMobileDevice()) {
-    return signInWithRedirect(auth, googleProvider);
-  }
-
+  // Try popup first on both mobile and desktop. On modern mobile browsers (Chrome on Android,
+  // Safari on iOS), signInWithPopup works smoothly when triggered by a direct user tap, and
+  // completely bypasses third-party cookie partitioning issues that break signInWithRedirect.
   try {
     const result = await signInWithPopup(auth, googleProvider);
     const profileName = getAdditionalUserInfo(result)?.profile?.name;
@@ -95,8 +92,8 @@ export async function signInWithGoogle(): Promise<UserCredential | void> {
     return result;
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code;
-    // Fallback to redirect if popup is blocked by the browser
-    if (code === "auth/popup-blocked" || code === "auth/cancelled-popup-request") {
+    // Fallback to redirect only if popup was explicitly blocked by the browser/webview
+    if (code === "auth/popup-blocked" || code === "auth/cancelled-popup-request" || code === "auth/operation-not-supported-in-this-environment") {
       return signInWithRedirect(auth, googleProvider);
     }
     throw err;
@@ -112,16 +109,11 @@ export async function linkCurrentUserWithGoogle(): Promise<User | void> {
   if (!user) throw new Error("Start a drawing session before linking Google.");
   if (!user.isAnonymous) return user;
 
-  if (isMobileDevice()) {
-    await linkWithRedirect(user, googleProvider);
-    return;
-  }
-
   try {
     return (await linkWithPopup(user, googleProvider)).user;
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code;
-    if (code === "auth/popup-blocked" || code === "auth/cancelled-popup-request") {
+    if (code === "auth/popup-blocked" || code === "auth/cancelled-popup-request" || code === "auth/operation-not-supported-in-this-environment") {
       await linkWithRedirect(user, googleProvider);
       return;
     }

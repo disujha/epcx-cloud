@@ -48,6 +48,8 @@ self.addEventListener("fetch", (event) => {
     request.url.includes("identitytoolkit.googleapis.com") ||
     request.url.includes("securetoken.googleapis.com") ||
     request.url.includes("firebasestorage.googleapis.com") ||
+    request.url.includes("accounts.google.com") ||
+    request.url.includes("/__/auth/") ||
     request.url.includes("/api/")
   ) {
     return;

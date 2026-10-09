@@ -2,15 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Mail, Lock, User } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, User, AlertCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getSafePostAuthPath } from "@/lib/auth-redirect";
 import { getFriendlyAuthErrorMessage } from "@/lib/firebase/auth";
+import { EpcxSpinner } from "@/components/ui/EpcxSpinner";
 
 export default function RegisterPage() {
-  const router = useRouter();
   const { user, loading: authLoading, redirectError, register, signInGoogle } = useAuth();
 
   const [name, setName] = useState("");
@@ -24,6 +23,8 @@ export default function RegisterPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const emailParam = params.get("email");
+    if (emailParam) setEmail(emailParam);
     const target = params.get("redirect");
     if (target) setRedirectPath(target);
   }, []);
@@ -32,9 +33,10 @@ export default function RegisterPage() {
   useEffect(() => {
     if (!authLoading && user) {
       const target = redirectPath || new URLSearchParams(window.location.search).get("redirect");
-      router.replace(getSafePostAuthPath(target));
+      const safePath = getSafePostAuthPath(target);
+      window.location.href = safePath;
     }
-  }, [user, authLoading, router, redirectPath]);
+  }, [user, authLoading, redirectPath]);
 
   // Display errors that occurred during redirect OAuth callback
   useEffect(() => {
@@ -54,10 +56,9 @@ export default function RegisterPage() {
     try {
       await register(email, password, name);
       const target = redirectPath || new URLSearchParams(window.location.search).get("redirect");
-      router.push(getSafePostAuthPath(target));
+      window.location.href = getSafePostAuthPath(target);
     } catch (err: unknown) {
       setError(getFriendlyAuthErrorMessage(err));
-    } finally {
       setLoading(false);
     }
   }
@@ -69,12 +70,19 @@ export default function RegisterPage() {
       const result = await signInGoogle();
       if (result) {
         const target = redirectPath || new URLSearchParams(window.location.search).get("redirect");
-        router.push(getSafePostAuthPath(target));
+        const safePath = getSafePostAuthPath(target);
+        window.location.href = safePath;
+        return;
       }
-      // If result is undefined/void, the browser is redirecting to Google
+      // If result is undefined/void, browser is redirecting to Google
     } catch (err: unknown) {
       console.error("Google sign-in error:", err);
-      setError(getFriendlyAuthErrorMessage(err));
+      const code = (err as { code?: string })?.code;
+      if (code === "auth/popup-closed-by-user") {
+        setError("Sign-in window was closed before completion. Tap to try again.");
+      } else {
+        setError(getFriendlyAuthErrorMessage(err));
+      }
       setGoogleLoading(false);
     }
   }
@@ -82,6 +90,20 @@ export default function RegisterPage() {
   const loginHref = redirectPath
     ? `/login?redirect=${encodeURIComponent(redirectPath)}`
     : "/login";
+
+  if (!authLoading && user) {
+    return (
+      <div className="text-center py-12 space-y-3">
+        <EpcxSpinner size="md" inline />
+        <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+          Account ready
+        </h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Loading your field workspace...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -100,7 +122,7 @@ export default function RegisterPage() {
       <button
         onClick={handleGoogle}
         disabled={googleLoading}
-        className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-60 mb-5"
+        className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-60 mb-5 active:scale-[0.99]"
       >
         <svg className="w-4.5 h-4.5" viewBox="0 0 24 24">
           <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -108,7 +130,7 @@ export default function RegisterPage() {
           <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
           <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
         </svg>
-        {googleLoading ? "Continuing..." : "Continue with Google"}
+        {googleLoading ? "Connecting with Google..." : "Continue with Google"}
       </button>
 
       <div className="relative mb-5">
@@ -123,8 +145,9 @@ export default function RegisterPage() {
       </div>
 
       {error && (
-        <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400">
-          {error}
+        <div className="mb-4 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400 flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+          <span>{error}</span>
         </div>
       )}
 
@@ -180,7 +203,7 @@ export default function RegisterPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 rounded-xl bg-accent-500 hover:bg-accent-600 text-white font-semibold text-sm transition-all duration-200 disabled:opacity-60 mt-2"
+          className="w-full py-3 rounded-xl bg-accent-500 hover:bg-accent-600 text-white font-semibold text-sm transition-all duration-200 disabled:opacity-60 mt-2 active:scale-[0.99]"
         >
           {loading ? "Creating account..." : "Create Account"}
         </button>
