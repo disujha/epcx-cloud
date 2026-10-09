@@ -7,8 +7,11 @@ export function getSafePostAuthPath(requestedPath: string | null): string {
     !requestedPath.startsWith("/login") &&
     !requestedPath.startsWith("/register")
   ) {
+    if (requestedPath === "/workspace") {
+      return "/start";
+    }
     return requestedPath;
   }
 
-  return "/dashboard";
+  return "/start";
 }

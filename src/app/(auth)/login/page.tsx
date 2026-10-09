@@ -19,13 +19,21 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+  const [redirectPath, setRedirectPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("redirect");
+    if (target) setRedirectPath(target);
+  }, []);
 
   // Automatically navigate if user completes redirect flow or is already authenticated
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+      const target = redirectPath || new URLSearchParams(window.location.search).get("redirect");
+      router.replace(getSafePostAuthPath(target));
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, redirectPath]);
 
   // Display errors that occurred during redirect OAuth callback
   useEffect(() => {
@@ -40,7 +48,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signIn(email, password);
-      router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+      const target = redirectPath || new URLSearchParams(window.location.search).get("redirect");
+      router.push(getSafePostAuthPath(target));
     } catch (err: unknown) {
       setError(getFriendlyAuthErrorMessage(err));
     } finally {
@@ -55,7 +64,8 @@ export default function LoginPage() {
       const result = await signInGoogle();
       if (result) {
         // Desktop popup completed
-        router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+        const target = redirectPath || new URLSearchParams(window.location.search).get("redirect");
+        router.push(getSafePostAuthPath(target));
       }
       // If result is undefined/void, the browser is redirecting to Google
     } catch (err: unknown) {
@@ -64,6 +74,10 @@ export default function LoginPage() {
       setGoogleLoading(false);
     }
   }
+
+  const registerHref = redirectPath
+    ? `/register?redirect=${encodeURIComponent(redirectPath)}`
+    : "/register";
 
   return (
     <motion.div
@@ -167,7 +181,7 @@ export default function LoginPage() {
 
       <p className="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
         Don&apos;t have an account?{" "}
-        <Link href="/register" className="font-semibold text-accent-500 hover:text-accent-600 transition-colors">
+        <Link href={registerHref} className="font-semibold text-accent-500 hover:text-accent-600 transition-colors">
           Create account
         </Link>
       </p>

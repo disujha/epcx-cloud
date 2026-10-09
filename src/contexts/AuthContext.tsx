@@ -37,6 +37,15 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function syncSessionCookie(isAuthenticated: boolean) {
+  if (typeof document === "undefined") return;
+  if (isAuthenticated) {
+    document.cookie = "__session=active; path=/; max-age=2592000; SameSite=Lax";
+  } else {
+    document.cookie = "__session=; path=/; max-age=0; SameSite=Lax";
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (!isMounted) return;
+      syncSessionCookie(Boolean(firebaseUser));
       setUser(firebaseUser);
       setLoading(false);
     });
@@ -87,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
+    syncSessionCookie(false);
     await signOut();
   }
 

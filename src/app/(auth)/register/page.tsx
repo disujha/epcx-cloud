@@ -20,13 +20,21 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+  const [redirectPath, setRedirectPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("redirect");
+    if (target) setRedirectPath(target);
+  }, []);
 
   // Automatically navigate if user completes redirect flow or is already authenticated
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+      const target = redirectPath || new URLSearchParams(window.location.search).get("redirect");
+      router.replace(getSafePostAuthPath(target));
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, router, redirectPath]);
 
   // Display errors that occurred during redirect OAuth callback
   useEffect(() => {
@@ -45,7 +53,8 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(email, password, name);
-      router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+      const target = redirectPath || new URLSearchParams(window.location.search).get("redirect");
+      router.push(getSafePostAuthPath(target));
     } catch (err: unknown) {
       setError(getFriendlyAuthErrorMessage(err));
     } finally {
@@ -59,7 +68,8 @@ export default function RegisterPage() {
     try {
       const result = await signInGoogle();
       if (result) {
-        router.push(getSafePostAuthPath(new URLSearchParams(window.location.search).get("redirect")));
+        const target = redirectPath || new URLSearchParams(window.location.search).get("redirect");
+        router.push(getSafePostAuthPath(target));
       }
       // If result is undefined/void, the browser is redirecting to Google
     } catch (err: unknown) {
@@ -68,6 +78,10 @@ export default function RegisterPage() {
       setGoogleLoading(false);
     }
   }
+
+  const loginHref = redirectPath
+    ? `/login?redirect=${encodeURIComponent(redirectPath)}`
+    : "/login";
 
   return (
     <motion.div
@@ -181,7 +195,7 @@ export default function RegisterPage() {
 
       <p className="mt-3 text-center text-sm text-slate-500 dark:text-slate-400">
         Already have an account?{" "}
-        <Link href="/login" className="font-semibold text-accent-500 hover:text-accent-600">
+        <Link href={loginHref} className="font-semibold text-accent-500 hover:text-accent-600">
           Sign in to EPCX Cloud
         </Link>
       </p>
