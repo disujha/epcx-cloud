@@ -20,6 +20,7 @@ import {
   Trash2,
   ChevronDown,
   Info,
+  FileSpreadsheet,
 } from "lucide-react";
 import type {
   CentralWorkItem,
@@ -81,6 +82,7 @@ export function DprExtractionAndReconciliation({
   const [nextDayPlan, setNextDayPlan] = useState("");
   const [filterQuery, setFilterQuery] = useState("");
   const [reconciliationFilter, setReconciliationFilter] = useState<"ALL" | "MATCHED" | "DPR_ONLY" | "DRAWING_ONLY">("ALL");
+  const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -92,7 +94,7 @@ export function DprExtractionAndReconciliation({
 
   // Handle DPR Image / PDF File Upload and Parsing
   async function handleFileUpload(selectedFile?: File) {
-    if (!selectedFile || !user) return;
+    if (!selectedFile) return;
     setFile(selectedFile);
     const objUrl = URL.createObjectURL(selectedFile);
     setFileUrl(objUrl);
@@ -184,7 +186,10 @@ export function DprExtractionAndReconciliation({
 
   // Save Confirmed DPR Record & generate/sync work items
   async function confirmAndSaveDpr() {
-    if (!user) return;
+    if (!user || user.isAnonymous) {
+      setMessage("Please sign in to an EPCX account to save and synchronize DPR work items.");
+      return;
+    }
     setProcessing(true);
     setMessage("");
 
@@ -367,20 +372,21 @@ export function DprExtractionAndReconciliation({
               onChange={(e) => void handleFileUpload(e.target.files?.[0])}
             />
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               className="dpr-action-btn primary"
               disabled={processing}
             >
-              <Upload size={16} />
+              <Upload size={15} />
               <span>{file ? "Replace DPR Document / Photo" : "Upload DPR Image or PDF"}</span>
             </button>
             <span className="dpr-upload-hint">
-              Supports client daily reports, scanned sheets, PDF tables and camera photos.
+              Supports client daily reports, scanned sheets, PDF tables, and camera inspection photos.
             </span>
             {processing && (
               <span className="dpr-spinner-badge">
                 <RefreshCw size={14} className="animate-spin" />
-                <span>Reading document...</span>
+                <span>Reading &amp; extracting DPR text...</span>
               </span>
             )}
           </div>
@@ -389,24 +395,118 @@ export function DprExtractionAndReconciliation({
             {/* Left: Original Document Preview */}
             <div className="dpr-document-viewer">
               <div className="dpr-pane-header">
-                <b>ORIGINAL SOURCE DOCUMENT</b>
-                <span>{file ? file.name : "No document loaded"}</span>
+                <div className="dpr-pane-header-left">
+                  <FileText size={15} />
+                  <b>ORIGINAL SOURCE DOCUMENT</b>
+                </div>
+                <span className="dpr-header-file-pill">
+                  {file ? file.name : "No document loaded"}
+                </span>
               </div>
               <div className="dpr-preview-viewport">
                 {fileUrl ? (
-                  file?.type === "application/pdf" || file?.name.endsWith(".pdf") ? (
-                    <iframe
-                      src={`${fileUrl}#toolbar=0`}
-                      className="dpr-pdf-frame"
-                      title="Source DPR Document"
-                    />
-                  ) : (
-                    <img src={fileUrl} alt="Source DPR" className="dpr-img-preview" />
-                  )
+                  <div className="dpr-viewer-active">
+                    <div className="dpr-viewer-action-bar">
+                      <div className="dpr-file-meta-pill">
+                        <FileText size={13} />
+                        <span className="dpr-file-name" title={file?.name}>{file?.name}</span>
+                        {file?.size && (
+                          <span className="dpr-file-size">({(file.size / 1024).toFixed(0)} KB)</span>
+                        )}
+                      </div>
+                      <div className="dpr-viewer-btns">
+                        <button
+                          type="button"
+                          className="dpr-viewer-btn"
+                          onClick={() => fileInputRef.current?.click()}
+                          title="Replace file"
+                        >
+                          <Upload size={13} />
+                          <span>Replace</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="dpr-viewer-btn danger"
+                          onClick={() => {
+                            setFile(null);
+                            setFileUrl("");
+                            setExtractedItems([]);
+                            setMessage("Document removed.");
+                          }}
+                          title="Remove file"
+                        >
+                          <Trash2 size={13} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="dpr-preview-stage">
+                      {file?.type === "application/pdf" || file?.name?.toLowerCase().endsWith(".pdf") ? (
+                        <iframe
+                          src={`${fileUrl}#toolbar=0`}
+                          className="dpr-pdf-frame"
+                          title="Source DPR Document"
+                        />
+                      ) : (
+                        <div className="dpr-image-wrap">
+                          <img src={fileUrl} alt="Source DPR" className="dpr-img-preview" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ) : (
-                  <div className="dpr-empty-viewport">
-                    <FileText size={36} className="text-slate-400" />
-                    <p>Upload a paper or digital DPR to view side-by-side with extracted data.</p>
+                  <div
+                    className={`dpr-empty-viewport ${isDragging ? "is-dragging" : ""}`}
+                    onClick={() => fileInputRef.current?.click()}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragging(true);
+                    }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDragging(false);
+                      const f = e.dataTransfer.files?.[0];
+                      if (f) void handleFileUpload(f);
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        fileInputRef.current?.click();
+                      }
+                    }}
+                    aria-label="Upload DPR file"
+                  >
+                    <div className="dpr-upload-drop-icon">
+                      <Upload size={28} />
+                    </div>
+                    <b className="dpr-upload-drop-title">Upload a paper or digital DPR</b>
+                    <p className="dpr-upload-drop-subtitle">
+                      Drag &amp; drop your DPR here, or click anywhere to browse
+                    </p>
+                    <button
+                      type="button"
+                      className="dpr-upload-trigger-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}
+                      disabled={processing}
+                    >
+                      <Upload size={15} />
+                      <span>Choose DPR Document (PDF / Image)</span>
+                    </button>
+                    <div className="dpr-upload-formats">
+                      <span>PDF</span>
+                      <span>JPG</span>
+                      <span>PNG</span>
+                      <span>WEBP</span>
+                    </div>
+                    <span className="dpr-upload-note">
+                      EPCX extracts tabular lines, area units, contractor, manpower &amp; joint progress for side-by-side verification.
+                    </span>
                   </div>
                 )}
               </div>
@@ -415,41 +515,50 @@ export function DprExtractionAndReconciliation({
             {/* Right: Editable Extracted Table & Metadata */}
             <div className="dpr-editor-pane">
               <div className="dpr-pane-header">
-                <b>STRUCTURED FIELD TABLE &amp; DETAILS</b>
-                <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
-                  User validation required
-                </span>
+                <div className="dpr-pane-header-left">
+                  <Layers size={15} />
+                  <b>STRUCTURED FIELD TABLE &amp; DETAILS</b>
+                </div>
+                <div className="dpr-pane-header-right">
+                  <span className="dpr-validation-badge">
+                    User validation required
+                  </span>
+                  <span className="dpr-count-badge">
+                    <b>{extractedItems.length}</b> rows
+                  </span>
+                </div>
               </div>
 
               {/* General Metadata Fields */}
               <div className="dpr-meta-grid">
-                <label>
-                  <span>Contractor</span>
+                <label className="dpr-meta-field">
+                  <span>Contractor / Agency</span>
                   <input
                     value={contractor}
                     onChange={(e) => setContractor(e.target.value)}
                     placeholder="e.g. Apex Engineering"
                   />
                 </label>
-                <label>
-                  <span>Area / Unit</span>
+                <label className="dpr-meta-field">
+                  <span>Area / Unit Location</span>
                   <input
                     value={area}
                     onChange={(e) => setArea(e.target.value)}
                     placeholder="e.g. Unit-02 Pipe Rack"
                   />
                 </label>
-                <label>
+                <label className="dpr-meta-field">
                   <span>Total Manpower</span>
                   <input
                     type="number"
+                    min="0"
                     value={manpowerTotal || ""}
                     onChange={(e) => setManpowerTotal(Number(e.target.value) || 0)}
                     placeholder="Workers on site"
                   />
                 </label>
-                <label>
-                  <span>Equipment Active</span>
+                <label className="dpr-meta-field">
+                  <span>Active Equipment</span>
                   <input
                     value={equipment}
                     onChange={(e) => setEquipment(e.target.value)}
@@ -461,26 +570,36 @@ export function DprExtractionAndReconciliation({
               {/* Extracted Work Items Table */}
               <div className="dpr-table-container">
                 <div className="dpr-table-toolbar">
-                  <span>
-                    <b>{extractedItems.length}</b> work entries
-                  </span>
-                  <button onClick={addRow} className="dpr-btn-sm">
-                    <Plus size={14} /> Add row
-                  </button>
+                  <div className="dpr-table-toolbar-left">
+                    <span className="dpr-toolbar-label">
+                      <b>{extractedItems.length}</b> work entries
+                    </span>
+                    {extractedItems.some((it) => it.confidence && it.confidence < 0.8) && (
+                      <span className="dpr-low-conf-pill">
+                        <AlertTriangle size={12} />
+                        <span>Highlighted rows need review</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="dpr-table-toolbar-right">
+                    <button type="button" onClick={addRow} className="dpr-btn-sm primary">
+                      <Plus size={14} /> Add row
+                    </button>
+                  </div>
                 </div>
 
                 <div className="dpr-table-wrap">
                   <table className="dpr-editable-table">
                     <thead>
                       <tr>
-                        <th style={{ width: "40px" }}>#</th>
-                        <th>Work Description</th>
-                        <th style={{ width: "110px" }}>Line / Area</th>
-                        <th style={{ width: "100px" }}>Joint / Tag</th>
-                        <th style={{ width: "100px" }}>Work Type</th>
-                        <th style={{ width: "70px" }}>Qty</th>
-                        <th style={{ width: "60px" }}>Unit</th>
-                        <th style={{ width: "40px" }}></th>
+                        <th className="th-num">#</th>
+                        <th className="th-desc">Work Description</th>
+                        <th className="th-area">Line / Area</th>
+                        <th className="th-tag">Joint / Tag</th>
+                        <th className="th-type">Work Type</th>
+                        <th className="th-qty">Qty</th>
+                        <th className="th-unit">Unit</th>
+                        <th className="th-action"></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -489,8 +608,8 @@ export function DprExtractionAndReconciliation({
                           key={item.id}
                           className={item.confidence && item.confidence < 0.8 ? "low-confidence" : ""}
                         >
-                          <td className="text-center text-xs text-slate-500">{idx + 1}</td>
-                          <td>
+                          <td className="td-num">{idx + 1}</td>
+                          <td className="td-desc">
                             <input
                               value={item.activityDescription}
                               onChange={(e) =>
@@ -500,7 +619,7 @@ export function DprExtractionAndReconciliation({
                               className="dpr-cell-input"
                             />
                           </td>
-                          <td>
+                          <td className="td-area">
                             <input
                               value={item.lineOrArea || ""}
                               onChange={(e) => updateRow(item.id, { lineOrArea: e.target.value })}
@@ -508,7 +627,7 @@ export function DprExtractionAndReconciliation({
                               className="dpr-cell-input"
                             />
                           </td>
-                          <td>
+                          <td className="td-tag">
                             <input
                               value={item.jointOrTag || ""}
                               onChange={(e) => updateRow(item.id, { jointOrTag: e.target.value })}
@@ -516,7 +635,7 @@ export function DprExtractionAndReconciliation({
                               className="dpr-cell-input font-mono"
                             />
                           </td>
-                          <td>
+                          <td className="td-type">
                             <select
                               value={item.discipline || "piping"}
                               onChange={(e) =>
@@ -531,7 +650,7 @@ export function DprExtractionAndReconciliation({
                               ))}
                             </select>
                           </td>
-                          <td>
+                          <td className="td-qty">
                             <input
                               type="number"
                               step="any"
@@ -542,18 +661,20 @@ export function DprExtractionAndReconciliation({
                               className="dpr-cell-input text-right"
                             />
                           </td>
-                          <td>
+                          <td className="td-unit">
                             <input
                               value={item.unit || "ea"}
                               onChange={(e) => updateRow(item.id, { unit: e.target.value })}
-                              className="dpr-cell-input"
+                              className="dpr-cell-input text-center"
                             />
                           </td>
-                          <td>
+                          <td className="td-action">
                             <button
+                              type="button"
                               onClick={() => deleteRow(item.id)}
                               className="dpr-del-btn"
                               title="Delete row"
+                              aria-label={`Delete row ${idx + 1}`}
                             >
                               <Trash2 size={13} />
                             </button>
@@ -563,7 +684,14 @@ export function DprExtractionAndReconciliation({
                       {extractedItems.length === 0 && (
                         <tr>
                           <td colSpan={8} className="dpr-table-empty">
-                            No rows extracted yet. Upload a DPR or click &quot;Add row&quot; to build.
+                            <div className="dpr-table-empty-inner">
+                              <FileSpreadsheet size={24} />
+                              <b>No work entries extracted yet</b>
+                              <p>Upload a DPR document on the left, or click &quot;Add row&quot; to build rows manually.</p>
+                              <button type="button" onClick={addRow} className="dpr-btn-sm primary">
+                                <Plus size={14} /> Add first row
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -574,27 +702,35 @@ export function DprExtractionAndReconciliation({
 
               {/* Remarks & Hindrance */}
               <div className="dpr-remarks-section">
-                <label>
+                <label className="dpr-remark-field">
                   <span>Remarks / Notes</span>
                   <input
                     value={remarks}
                     onChange={(e) => setRemarks(e.target.value)}
-                    placeholder="General shift remarks"
+                    placeholder="General shift remarks, safety briefings, weather conditions..."
                   />
                 </label>
-                <label>
+                <label className="dpr-remark-field">
                   <span>Hindrance / Stoppage (if any)</span>
                   <input
                     value={hindrances}
                     onChange={(e) => setHindrances(e.target.value)}
-                    placeholder="Weather, permit, material delays"
+                    placeholder="Permit delay, rain stoppage, material waiting..."
                   />
                 </label>
               </div>
 
               {/* Bottom Confirm Action */}
               <div className="dpr-editor-actions">
+                <div className="dpr-action-hint">
+                  {extractedItems.length > 0 ? (
+                    <span>Ready to sync <b>{extractedItems.length}</b> work items to central register.</span>
+                  ) : (
+                    <span>Upload a DPR or add work items above to synchronize.</span>
+                  )}
+                </div>
                 <button
+                  type="button"
                   onClick={confirmAndSaveDpr}
                   disabled={processing || extractedItems.length === 0}
                   className="dpr-confirm-btn"

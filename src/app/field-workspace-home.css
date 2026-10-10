@@ -112,3 +112,255 @@
 /* ── Attention card — DPR draft ready variant ── */
 .attention-item-dpr-ready{background:#eef5f0!important;border-color:#bad3c5!important}
 .attention-icon-ready{background:#e4ebe2!important;color:var(--field-green,#315e49)!important}
+
+/* ==========================================================================
+   TBT (TOOLBOX TALK) MODAL DIALOG
+   ========================================================================== */
+
+.field-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(16, 33, 23, 0.65);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  animation: fieldModalFadeIn 0.16s ease-out;
+}
+
+@keyframes fieldModalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.field-tbt-dialog {
+  position: relative;
+  width: min(100%, 540px);
+  max-height: min(90dvh, 760px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dce5dd;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 24px 64px rgba(16, 33, 23, 0.32), 0 4px 16px rgba(16, 33, 23, 0.08);
+  animation: fieldDialogSlideUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fieldDialogSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.field-tbt-dialog header {
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid #edf1ed;
+  background: #ffffff;
+}
+
+.field-tbt-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.field-tbt-dialog header span,
+.field-tbt-header-top span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #286849;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.field-tbt-dialog header span svg,
+.field-tbt-header-top span svg {
+  color: #286849;
+}
+
+.field-tbt-close {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #64756a;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.field-tbt-close:hover {
+  background: #f0f4f1;
+  color: #192a20;
+  border-color: #dbe4dc;
+}
+
+.field-tbt-dialog header h2 {
+  margin: 4px 0;
+  color: #182720;
+  font-size: 22px;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.field-tbt-dialog header p {
+  margin: 4px 0 0;
+  color: #5e6f64;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.field-tbt-fields {
+  padding: 20px 24px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.field-tbt-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-tbt-fields label span {
+  color: #314638;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.field-tbt-fields label.wide {
+  grid-column: 1 / -1;
+}
+
+.field-tbt-fields input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #dce4dc;
+  border-radius: 7px;
+  background: #fafcfa;
+  color: #1a2c21;
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+}
+
+.field-tbt-fields input:focus {
+  outline: none;
+  border-color: #327550;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(50, 117, 80, 0.12);
+}
+
+.field-tbt-fields input::placeholder {
+  color: #8fa094;
+  font-size: 13px;
+}
+
+.field-tbt-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid #edf1ed;
+  background: #fafbfa;
+}
+
+.field-tbt-dialog footer button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 18px;
+  border: 1px solid #286849;
+  border-radius: 7px;
+  background: #286849;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.field-tbt-dialog footer button:hover {
+  background: #1f563b;
+  border-color: #1f563b;
+  box-shadow: 0 3px 12px rgba(40, 104, 73, 0.22);
+}
+
+.field-tbt-dialog footer button.secondary {
+  border: 1px solid #dbe3dc;
+  background: #ffffff;
+  color: #495d50;
+  font-weight: 650;
+}
+
+.field-tbt-dialog footer button.secondary:hover {
+  background: #f2f6f3;
+  color: #1e3025;
+  border-color: #cbd8ce;
+  box-shadow: none;
+}
+
+@media (max-width: 600px) {
+  .field-modal-backdrop {
+    padding: 12px;
+    align-items: flex-end;
+  }
+  .field-tbt-dialog {
+    width: 100%;
+    max-height: 88dvh;
+    border-radius: 14px 14px 0 0;
+  }
+  .field-tbt-dialog header {
+    padding: 18px 16px 14px;
+  }
+  .field-tbt-dialog header h2 {
+    font-size: 19px;
+  }
+  .field-tbt-fields {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 16px;
+  }
+  .field-tbt-fields label.wide {
+    grid-column: auto;
+  }
+  .field-tbt-dialog footer {
+    padding: 12px 16px max(14px, env(safe-area-inset-bottom));
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .field-tbt-dialog footer button {
+    width: 100%;
+  }
+}
+

@@ -40,7 +40,7 @@ export function EpcxSpinner({
         width: `${pixelSize}px`,
         height: `${pixelSize}px`,
         objectFit: "contain",
-        display: "inline-block",
+        display: inline ? "inline-block" : "block",
       }}
     />
   );
@@ -53,7 +53,7 @@ export function EpcxSpinner({
     return (
       <div className={`epcx-spinner-wrap inline-flex items-center gap-2 ${inline ? "" : "py-3 justify-center"}`}>
         {spinner}
-        <span className="text-xs font-medium text-[#526269]">{label}</span>
+        <span className="text-xs font-medium text-[#526269] dark:text-slate-400">{label}</span>
       </div>
     );
   }
@@ -80,15 +80,17 @@ export function EpcxLoadingScreen({
       role="status"
       aria-live="polite"
     >
-      <div className="epcx-loading-badge relative mb-4">
+      <div className="epcx-loading-badge relative mb-4 flex items-center justify-center">
+        {/* Perfectly centered concentric halo ring */}
         <div
-          className="absolute -inset-2 rounded-full border border-[#d6e2d8] opacity-70 animate-pulse"
-          style={{ width: "54px", height: "54px", top: "-8px", left: "-8px" }}
+          className="absolute -inset-2 rounded-full border border-[#d6e2d8] dark:border-slate-700 opacity-70 animate-pulse pointer-events-none"
+          aria-hidden="true"
         />
-        <EpcxSpinner size={38} />
+        {/* Centered rotating favicon spinner scaled to fit cleanly within circle */}
+        <EpcxSpinner size={28} className="block m-auto" />
       </div>
-      <b className="text-sm font-bold text-[#18272e] tracking-tight mb-1">{title}</b>
-      {subtitle && <p className="text-xs text-[#526269] max-w-sm m-0">{subtitle}</p>}
+      <b className="text-sm font-bold text-[#18272e] dark:text-slate-100 tracking-tight mb-1">{title}</b>
+      {subtitle && <p className="text-xs text-[#526269] dark:text-slate-400 max-w-sm m-0">{subtitle}</p>}
     </div>
   );
 }

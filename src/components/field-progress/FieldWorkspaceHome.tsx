@@ -57,6 +57,7 @@ export function FieldWorkspaceHome({
   onOpenProject,
   onOpenWork,
   onOpenTools,
+  initialAdd,
 }: {
   onAddDrawing: () => void;
   onAddDpr: () => void;
@@ -71,6 +72,7 @@ export function FieldWorkspaceHome({
   onOpenProject?: () => void;
   onOpenWork?: () => void;
   onOpenTools?: () => void;
+  initialAdd?: string;
 }) {
   const { user, loading } = useAuth();
   const accountUser = user && !user.isAnonymous ? user : null;
@@ -107,6 +109,22 @@ export function FieldWorkspaceHome({
   const [tbtDetails, setTbtDetails] = useState({ date: localDay(), area: "", topic: "", supervisor: "", manpower: "", workers: "", staff: "", remarks: "" });
   const [message, setMessage] = useState("");
   const [filter, setFilter] = useState<"all" | RecordType>("all");
+
+  useEffect(() => {
+    if (initialAdd === "tbt") {
+      setTbtDetails((old) => ({ ...old, date: localDay() }));
+      setTbtDialogOpen(true);
+    }
+  }, [initialAdd]);
+
+  useEffect(() => {
+    if (!tbtDialogOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTbtDialogOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [tbtDialogOpen]);
   const [query, setQuery] = useState("");
   const [historyMonth, setHistoryMonth] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); });
   const [historyDay, setHistoryDay] = useState("");
@@ -623,25 +641,30 @@ export function FieldWorkspaceHome({
 
       {tbtDialogOpen && (
         <div className="field-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTbtDialogOpen(false); }}>
-          <section className="field-tbt-dialog" role="dialog" aria-modal="true" aria-labelledby="field-tbt-title">
+          <section className="field-tbt-dialog" role="dialog" aria-modal="true" aria-labelledby="field-tbt-title" onClick={(e) => e.stopPropagation()}>
             <header>
-              <span><ShieldCheck size={18} />TOOLBOX TALK</span>
+              <div className="field-tbt-header-top">
+                <span><ShieldCheck size={16} />TOOLBOX TALK</span>
+                <button type="button" className="field-tbt-close" onClick={() => setTbtDialogOpen(false)} aria-label="Close dialog">
+                  <X size={18} />
+                </button>
+              </div>
               <h2 id="field-tbt-title">Add today&apos;s TBT</h2>
               <p>Record the details you know, then attach the original sheet or photo.</p>
             </header>
             <div className="field-tbt-fields">
-              <label>Date<input type="date" value={tbtDetails.date} onChange={(event) => setTbtDetails((old) => ({ ...old, date: event.target.value }))} /></label>
-              <label>Area<input value={tbtDetails.area} onChange={(event) => setTbtDetails((old) => ({ ...old, area: event.target.value }))} placeholder="e.g. Pipe rack north" /></label>
-              <label className="wide">Topic<input value={tbtDetails.topic} onChange={(event) => setTbtDetails((old) => ({ ...old, topic: event.target.value }))} placeholder="Toolbox talk topic" /></label>
-              <label>Supervisor<input value={tbtDetails.supervisor} onChange={(event) => setTbtDetails((old) => ({ ...old, supervisor: event.target.value }))} /></label>
-              <label>Manpower<input type="number" min="0" value={tbtDetails.manpower} onChange={(event) => setTbtDetails((old) => ({ ...old, manpower: event.target.value }))} /></label>
-              <label>Workers<input type="number" min="0" value={tbtDetails.workers} onChange={(event) => setTbtDetails((old) => ({ ...old, workers: event.target.value }))} /></label>
-              <label>Staff / supervisors<input type="number" min="0" value={tbtDetails.staff} onChange={(event) => setTbtDetails((old) => ({ ...old, staff: event.target.value }))} /></label>
-              <label className="wide">Remarks<input value={tbtDetails.remarks} onChange={(event) => setTbtDetails((old) => ({ ...old, remarks: event.target.value }))} placeholder="Optional note" /></label>
+              <label><span>Date</span><input type="date" value={tbtDetails.date} onChange={(event) => setTbtDetails((old) => ({ ...old, date: event.target.value }))} /></label>
+              <label><span>Area</span><input value={tbtDetails.area} onChange={(event) => setTbtDetails((old) => ({ ...old, area: event.target.value }))} placeholder="e.g. Pipe rack north" /></label>
+              <label className="wide"><span>Topic</span><input value={tbtDetails.topic} onChange={(event) => setTbtDetails((old) => ({ ...old, topic: event.target.value }))} placeholder="Toolbox talk topic" /></label>
+              <label><span>Supervisor</span><input value={tbtDetails.supervisor} onChange={(event) => setTbtDetails((old) => ({ ...old, supervisor: event.target.value }))} placeholder="e.g. Site Supervisor" /></label>
+              <label><span>Manpower</span><input type="number" min="0" value={tbtDetails.manpower} onChange={(event) => setTbtDetails((old) => ({ ...old, manpower: event.target.value }))} placeholder="Total count" /></label>
+              <label><span>Workers</span><input type="number" min="0" value={tbtDetails.workers} onChange={(event) => setTbtDetails((old) => ({ ...old, workers: event.target.value }))} placeholder="Worker count" /></label>
+              <label><span>Staff / supervisors</span><input type="number" min="0" value={tbtDetails.staff} onChange={(event) => setTbtDetails((old) => ({ ...old, staff: event.target.value }))} placeholder="Staff count" /></label>
+              <label className="wide"><span>Remarks</span><input value={tbtDetails.remarks} onChange={(event) => setTbtDetails((old) => ({ ...old, remarks: event.target.value }))} placeholder="Optional notes or safety observations" /></label>
             </div>
             <footer>
-              <button className="secondary" onClick={() => setTbtDialogOpen(false)}>Cancel</button>
-              <button onClick={chooseTbtFile}><ShieldCheck size={16} />Attach sheet or photo</button>
+              <button type="button" className="secondary" onClick={() => setTbtDialogOpen(false)}>Cancel</button>
+              <button type="button" onClick={chooseTbtFile}><ShieldCheck size={16} />Attach sheet or photo</button>
             </footer>
           </section>
         </div>

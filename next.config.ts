@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
-const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "epcxsite.firebaseapp.com";
+const firebaseHostingDomain =
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    ? `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebaseapp.com`
+    : "epcxsite.firebaseapp.com";
 
 const nextConfig: NextConfig = {
   async redirects() {
@@ -14,7 +17,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/__/auth/:path*",
-        destination: `https://${authDomain}/__/auth/:path*`,
+        destination: `https://${firebaseHostingDomain}/__/auth/:path*`,
       },
     ];
   },

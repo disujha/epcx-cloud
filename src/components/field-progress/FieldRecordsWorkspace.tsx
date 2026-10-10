@@ -42,7 +42,7 @@ export function FieldRecordsWorkspace({ view = "workspace", add = "", record = "
   const [activeToolboxTool, setActiveToolboxTool] = useState<ActiveTool>("menu");
   const [activeReportSubtype, setActiveReportSubtype] = useState<"dpr_summary" | "work_register" | "drawing_progress" | "reconciliation" | "missing_unreported">("dpr_summary");
   const [drawingSubView, setDrawingSubView] = useState<"today" | "history" | "drawings">("today");
-  const [addAction, setAddAction] = useState<"drawing" | "dpr" | "">(add === "dpr" ? "dpr" : add === "drawing" ? "drawing" : "");
+  const [addAction, setAddAction] = useState<"drawing" | "dpr" | "tbt" | "">(add === "dpr" ? "dpr" : add === "drawing" ? "drawing" : add === "tbt" ? "tbt" : "");
   const [initialDprId, setInitialDprId] = useState(record);
   const [initialRecordId, setInitialRecordId] = useState("");
   const [project, setProject] = useState<FieldProject>(emptyFieldProject);
@@ -286,6 +286,7 @@ export function FieldRecordsWorkspace({ view = "workspace", add = "", record = "
     onOpenProject: () => setPage("project"),
     onOpenWork: () => setPage("work"),
     onOpenTools: () => setPage("tools"),
+    initialAdd: addAction,
   };
 
   return <main className="field-records-app">

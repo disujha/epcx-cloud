@@ -1332,8 +1332,9 @@
 
 .epcx-loading-badge {
   position: relative;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 52px;
   height: 52px;
   border-radius: 50%;
@@ -1343,9 +1344,17 @@
   margin-bottom: 12px;
 }
 
+:is(.dark) .epcx-loading-badge {
+  background: #111e24;
+  border-color: #24353d;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
 .epcx-loading-badge .epcx-favicon-spin {
   width: 28px;
   height: 28px;
+  display: block;
+  margin: 0 auto;
 }
 
 /* Shift / Record Date Picker in Drawing Header */
